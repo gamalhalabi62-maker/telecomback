@@ -3,7 +3,6 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { sendNotificationEmail } = require('../utils/sendEmail');
 
-// ========== جلب كل الأخبار ==========
 const getNews = async (req, res) => {
   try {
     const {
@@ -47,7 +46,6 @@ const getNews = async (req, res) => {
   }
 };
 
-// ========== الأخبار العاجلة ==========
 const getBreakingNews = async (req, res) => {
   try {
     const { limit = 5 } = req.query;
@@ -71,7 +69,6 @@ const getBreakingNews = async (req, res) => {
   }
 };
 
-// ========== الأخبار المميزة ==========
 const getFeaturedNews = async (req, res) => {
   try {
     const { limit = 5 } = req.query;
@@ -94,7 +91,6 @@ const getFeaturedNews = async (req, res) => {
   }
 };
 
-// ========== الأكثر قراءة ==========
 const getPopularNews = async (req, res) => {
   try {
     const { limit = 5 } = req.query;
@@ -109,7 +105,6 @@ const getPopularNews = async (req, res) => {
   }
 };
 
-// ========== إحصائيات ==========
 const getStats = async (req, res) => {
   try {
     const totalNews = await News.countDocuments();
@@ -130,7 +125,6 @@ const getStats = async (req, res) => {
   }
 };
 
-// ========== خبر واحد ==========
 const getNewsById = async (req, res) => {
   try {
     const news = await News.findById(req.params.id).populate('author', 'name');
@@ -158,7 +152,6 @@ const getNewsById = async (req, res) => {
   }
 };
 
-// ========== إضافة خبر ==========
 const createNews = async (req, res) => {
   try {
     const {
@@ -170,7 +163,6 @@ const createNews = async (req, res) => {
       return res.status(400).json({ message: 'العنوان والمحتوى مطلوبان' });
     }
 
-    // ✅ Cloudinary يُرجع الرابط الكامل في req.file.path
     const imageUrl = req.file
       ? req.file.path
       : req.body.imageUrl || '';
@@ -191,7 +183,6 @@ const createNews = async (req, res) => {
       author: req.user._id,
     });
 
-    // ========== إرسال الإشعارات ==========
     try {
       const users = await User.find({
         receiveNotifications: true,
@@ -224,7 +215,7 @@ const createNews = async (req, res) => {
           ).catch((err) => console.error('Email error:', err.message));
         });
 
-        console.log(`✅ Notifications sent to ${users.length} users`);
+        console.log(`Notifications sent to ${users.length} users`);
       }
     } catch (notifyErr) {
       console.error('Notification error:', notifyErr.message);
@@ -236,7 +227,6 @@ const createNews = async (req, res) => {
   }
 };
 
-// ========== تعديل خبر ==========
 const updateNews = async (req, res) => {
   try {
     const news = await News.findById(req.params.id);
@@ -246,7 +236,6 @@ const updateNews = async (req, res) => {
 
     const updatedData = { ...req.body };
 
-    // ✅ Cloudinary يُرجع الرابط الكامل
     if (req.file) {
       updatedData.imageUrl = req.file.path;
     }
@@ -283,7 +272,6 @@ const updateNews = async (req, res) => {
   }
 };
 
-// ========== حذف خبر ==========
 const deleteNews = async (req, res) => {
   try {
     const news = await News.findById(req.params.id);
