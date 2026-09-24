@@ -4,34 +4,73 @@ const User = require('../models/User');
 const { sendNotificationEmail } = require('../utils/sendEmail');
 const cloudinary = require('../config/cloudinary');
 
-const uploadBufferToCloudinary = (fileBuffer, folderName = 'telecom-egypt/news') => {
+/**
+ * رفع Buffer إلى Cloudinary
+ * - resource_type: 'image' صراحةً (ليس 'auto')
+ * - timeout 120 ثانية
+ * - تحقق من وجود buffer و secure_url
+ * - transformation لتحسين الصور
+ */
+const uploadBufferToCloudinary = (
+  fileBuffer,
+  folderName = 'telecom-egypt/news',
+  resourceType = 'image'
+) => {
   return new Promise((resolve, reject) => {
+    if (!fileBuffer || fileBuffer.length === 0) {
+      return reject(new Error('File buffer is empty or missing'));
+    }
+
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: folderName,
-        resource_type: 'auto',
+        resource_type: resourceType,
+        timeout: 120000, // 2 دقيقة
+        transformation: [
+          { width: 1600, height: 1200, crop: 'limit' },
+          { quality: 'auto:good' },
+          { fetch_format: 'auto' },
+        ],
       },
       (error, result) => {
-        if (error) return reject(error);
+        if (error) {
+          console.error('❌ Cloudinary upload_stream error:', error);
+          return reject(error);
+        }
+        if (!result || !result.secure_url) {
+          return reject(new Error('Cloudinary returned no secure_url'));
+        }
         resolve(result);
       }
     );
+
+    uploadStream.on('error', (err) => {
+      console.error('❌ Upload stream error:', err);
+      reject(err);
+    });
+
     uploadStream.end(fileBuffer);
   });
 };
 
+/* ============================================================
+ *  GET  /api/news
+ *  قائمة الأخبار مع فلترة وترتيب وترقيم صفحات
+ * ============================================================ */
 const getNews = async (req, res) => {
   try {
     const {
       category, search, page = 1, limit = 10, sort = 'latest',
       featured, breaking, urgent,
     } = req.query;
+
     let query = {};
 
     if (category) query.category = category;
     if (featured === 'true') query.isFeatured = true;
     if (breaking === 'true') query.isBreaking = true;
     if (urgent === 'true') query.isUrgent = true;
+
     if (search) {
       query.$or = [
         { title: { $regex: search, $options: 'i' } },
@@ -47,45 +86,54 @@ const getNews = async (req, res) => {
     const news = await News.find(query)
       .populate('author', 'name')
       .sort(sortOption)
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .limit(Number(limit))
+      .skip((Number(page) - 1) * Number(limit));
 
     const count = await News.countDocuments(query);
 
     res.json({
       news,
-      totalPages: Math.ceil(count / limit),
+      totalPages: Math.ceil(count / Number(limit)),
       currentPage: Number(page),
       total: count,
     });
   } catch (error) {
+    console.error('❌ getNews error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
 
+/* ============================================================
+ *  GET  /api/news/breaking
+ * ============================================================ */
 const getBreakingNews = async (req, res) => {
   try {
     const { limit = 5 } = req.query;
+
     let news = await News.find({
       $or: [{ isBreaking: true }, { isUrgent: true }],
     })
       .sort({ priority: -1, createdAt: -1 })
       .limit(Number(limit))
-      .select('title _id category isBreaking isUrgent priority createdAt');
+      .select('title _id category isBreaking isUrgent priority createdAt imageUrl');
 
     if (news.length === 0) {
       news = await News.find({})
         .sort({ createdAt: -1 })
         .limit(Number(limit))
-        .select('title _id category isBreaking isUrgent priority createdAt');
+        .select('title _id category isBreaking isUrgent priority createdAt imageUrl');
     }
 
     res.json({ news });
   } catch (error) {
+    console.error('❌ getBreakingNews error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
 
+/* ============================================================
+ *  GET  /api/news/featured
+ * ============================================================ */
 const getFeaturedNews = async (req, res) => {
   try {
     const { limit = 5 } = req.query;
@@ -104,10 +152,14 @@ const getFeaturedNews = async (req, res) => {
 
     res.json({ news: featured });
   } catch (error) {
+    console.error('❌ getFeaturedNews error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
 
+/* ============================================================
+ *  GET  /api/news/popular
+ * ============================================================ */
 const getPopularNews = async (req, res) => {
   try {
     const { limit = 5 } = req.query;
@@ -118,10 +170,14 @@ const getPopularNews = async (req, res) => {
 
     res.json({ news });
   } catch (error) {
+    console.error('❌ getPopularNews error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
 
+/* ============================================================
+ *  GET  /api/news/stats
+ * ============================================================ */
 const getStats = async (req, res) => {
   try {
     const totalNews = await News.countDocuments();
@@ -138,10 +194,14 @@ const getStats = async (req, res) => {
       categoriesCount,
     });
   } catch (error) {
+    console.error('❌ getStats error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
 
+/* ============================================================
+ *  GET  /api/news/:id
+ * ============================================================ */
 const getNewsById = async (req, res) => {
   try {
     const news = await News.findById(req.params.id).populate('author', 'name');
@@ -165,22 +225,33 @@ const getNewsById = async (req, res) => {
       related,
     });
   } catch (error) {
+    console.error('❌ getNewsById error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
 
+/* ============================================================
+ *  POST  /api/news   (admin)
+ *  multipart/form-data بحقل اسمه "image"
+ * ============================================================ */
 const createNews = async (req, res) => {
   try {
     console.log('\n========== CREATE NEWS ==========');
     console.log('req.body keys:', Object.keys(req.body));
     console.log('req.file exists:', !!req.file);
-    console.log('req.file details:', req.file ? {
-      fieldname: req.file.fieldname,
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-      hasBuffer: !!req.file.buffer,
-    } : 'NO FILE');
+    console.log(
+      'req.file details:',
+      req.file
+        ? {
+            fieldname: req.file.fieldname,
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size,
+            hasBuffer: !!req.file.buffer,
+            bufferLength: req.file.buffer?.length,
+          }
+        : 'NO FILE'
+    );
     console.log('=================================\n');
 
     const {
@@ -194,18 +265,30 @@ const createNews = async (req, res) => {
 
     let imageUrl = req.body.imageUrl || '';
 
-    if (req.file && req.file.buffer) {
+    // ✅ إذا وُجد ملف، يجب أن يُرفع بنجاح أو نُرجع خطأ 500
+    if (req.file) {
+      if (!req.file.buffer || req.file.buffer.length === 0) {
+        return res.status(400).json({ message: 'الملف المرفوع فارغ أو تالف' });
+      }
+
       console.log('📤 Uploading to Cloudinary...');
       try {
-        const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
+        const cloudResult = await uploadBufferToCloudinary(
+          req.file.buffer,
+          'telecom-egypt/news',
+          'image'
+        );
         imageUrl = cloudResult.secure_url;
         console.log('✅ Cloudinary URL:', imageUrl);
       } catch (cloudErr) {
-        console.error('❌ Cloudinary error:', cloudErr.message);
-        console.error('❌ Full error:', cloudErr);
+        console.error('❌ Cloudinary upload failed:', cloudErr);
+        return res.status(500).json({
+          message: 'فشل رفع الصورة. يرجى المحاولة مرة أخرى.',
+          error: cloudErr.message,
+        });
       }
     } else {
-      console.log('⚠️ No file to upload (req.file or req.file.buffer missing)');
+      console.log('⚠️ No file attached to request');
     }
 
     console.log('📝 Final imageUrl:', imageUrl || '(empty)');
@@ -221,11 +304,14 @@ const createNews = async (req, res) => {
       isUrgent: isUrgent === 'true' || isUrgent === true,
       priority: Number(priority) || 0,
       tags: tags
-        ? (Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim()))
+        ? Array.isArray(tags)
+          ? tags
+          : tags.split(',').map((t) => t.trim())
         : [],
       author: req.user._id,
     });
 
+    /* ---------- إشعارات + بريد ---------- */
     try {
       const users = await User.find({
         receiveNotifications: true,
@@ -269,10 +355,25 @@ const createNews = async (req, res) => {
   }
 };
 
+/* ============================================================
+ *  PUT  /api/news/:id   (admin)
+ * ============================================================ */
 const updateNews = async (req, res) => {
   try {
     console.log('\n========== UPDATE NEWS ==========');
     console.log('req.file exists:', !!req.file);
+    console.log(
+      'req.file details:',
+      req.file
+        ? {
+            fieldname: req.file.fieldname,
+            originalname: req.file.originalname,
+            mimetype: req.file.mimetype,
+            size: req.file.size,
+            hasBuffer: !!req.file.buffer,
+          }
+        : 'NO FILE'
+    );
 
     const news = await News.findById(req.params.id);
     if (!news) {
@@ -281,17 +382,31 @@ const updateNews = async (req, res) => {
 
     const updatedData = { ...req.body };
 
-    if (req.file && req.file.buffer) {
+    // ✅ إذا وُجد ملف، يجب أن يُرفع بنجاح أو نُرجع خطأ
+    if (req.file) {
+      if (!req.file.buffer || req.file.buffer.length === 0) {
+        return res.status(400).json({ message: 'الملف المرفوع فارغ أو تالف' });
+      }
+
       console.log('📤 Uploading new image to Cloudinary...');
       try {
-        const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
+        const cloudResult = await uploadBufferToCloudinary(
+          req.file.buffer,
+          'telecom-egypt/news',
+          'image'
+        );
         updatedData.imageUrl = cloudResult.secure_url;
         console.log('✅ New Cloudinary URL:', updatedData.imageUrl);
       } catch (cloudErr) {
-        console.error('❌ Cloudinary error:', cloudErr.message);
+        console.error('❌ Cloudinary upload failed:', cloudErr);
+        return res.status(500).json({
+          message: 'فشل رفع الصورة الجديدة',
+          error: cloudErr.message,
+        });
       }
     }
 
+    /* ---------- تحويلات Boolean / Number ---------- */
     if (updatedData.isFeatured !== undefined) {
       updatedData.isFeatured =
         updatedData.isFeatured === 'true' || updatedData.isFeatured === true;
@@ -304,13 +419,11 @@ const updateNews = async (req, res) => {
       updatedData.isUrgent =
         updatedData.isUrgent === 'true' || updatedData.isUrgent === true;
     }
-
     if (updatedData.priority !== undefined) {
       updatedData.priority = Number(updatedData.priority) || 0;
     }
-
     if (updatedData.tags && !Array.isArray(updatedData.tags)) {
-      updatedData.tags = updatedData.tags.split(',').map(t => t.trim());
+      updatedData.tags = updatedData.tags.split(',').map((t) => t.trim());
     }
 
     const updatedNews = await News.findByIdAndUpdate(req.params.id, updatedData, {
@@ -325,6 +438,9 @@ const updateNews = async (req, res) => {
   }
 };
 
+/* ============================================================
+ *  DELETE  /api/news/:id   (admin)
+ * ============================================================ */
 const deleteNews = async (req, res) => {
   try {
     const news = await News.findById(req.params.id);
@@ -335,6 +451,7 @@ const deleteNews = async (req, res) => {
     await news.deleteOne();
     res.json({ message: 'تم حذف الخبر بنجاح' });
   } catch (error) {
+    console.error('❌ deleteNews error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };

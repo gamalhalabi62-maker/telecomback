@@ -123,6 +123,16 @@ app.use((err, req, res, next) => {
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 });
+// معالج أخطاء Multer
+app.use((err, req, res, next) => {
+  if (err instanceof require('multer').MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ message: 'حجم الملف كبير جداً (الحد 50 ميجابايت)' });
+    }
+    return res.status(400).json({ message: `خطأ في رفع الملف: ${err.message}` });
+  }
+  next(err);
+});
 
 app.use((req, res) => {
   res.status(404).json({ message: 'المسار غير موجود' });

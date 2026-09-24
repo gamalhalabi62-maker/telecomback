@@ -3,30 +3,36 @@ const path = require('path');
 
 const storage = multer.memoryStorage();
 
+const imageMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+const imageExts = /\.(jpe?g|png|webp|gif)$/i;
+const videoMimes = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo'];
+const videoExts = /\.(mp4|webm|ogg|mov|avi)$/i;
+
 const fileFilter = (req, file, cb) => {
   if (file.fieldname === 'image' || file.fieldname === 'thumbnail') {
-    const allowedImages = /jpeg|jpg|png|webp|gif/;
-    const extname = allowedImages.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedImages.test(file.mimetype.toLowerCase());
-    if (extname && mimetype) return cb(null, true);
-    return cb(new Error('يُسمح برفع الصور فقط بصيغ JPG, PNG, WEBP'));
+    const okExt = imageExts.test(file.originalname);
+    const okMime = imageMimes.includes(file.mimetype.toLowerCase());
+    if (okExt && okMime) return cb(null, true);
+    return cb(
+      new Error(`صيغة الصورة غير مدعومة: ${file.mimetype}. يُسمح بـ JPG, PNG, WEBP, GIF فقط.`)
+    );
   }
 
   if (file.fieldname === 'video') {
-    const allowedVideos = /mp4|webm|ogg|mov|avi/;
-    const extname = allowedVideos.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = /^video\//i.test(file.mimetype);
-    if (extname && mimetype) return cb(null, true);
-    return cb(new Error('يُسمح برفع ملفات الفيديو فقط'));
+    const okExt = videoExts.test(file.originalname);
+    const okMime = videoMimes.includes(file.mimetype.toLowerCase()) ||
+      file.mimetype.toLowerCase().startsWith('video/');
+    if (okExt && okMime) return cb(null, true);
+    return cb(new Error('صيغة الفيديو غير مدعومة'));
   }
 
   cb(null, true);
 };
 
 const upload = multer({
-  storage: storage,
-  limits: { fileSize: 50 * 1024 * 1024 },
-  fileFilter: fileFilter,
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  fileFilter,
 });
 
 const uploadSingle = upload.single('image');
@@ -39,4 +45,5 @@ module.exports = {
   uploadSingle,
   uploadImage: uploadSingle,
   uploadVideoFields,
+  upload,
 };
