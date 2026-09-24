@@ -171,6 +171,18 @@ const getNewsById = async (req, res) => {
 
 const createNews = async (req, res) => {
   try {
+    console.log('\n========== CREATE NEWS ==========');
+    console.log('req.body keys:', Object.keys(req.body));
+    console.log('req.file exists:', !!req.file);
+    console.log('req.file details:', req.file ? {
+      fieldname: req.file.fieldname,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      hasBuffer: !!req.file.buffer,
+    } : 'NO FILE');
+    console.log('=================================\n');
+
     const {
       title, content, excerpt, category, isFeatured,
       isBreaking, isUrgent, priority, tags,
@@ -183,9 +195,20 @@ const createNews = async (req, res) => {
     let imageUrl = req.body.imageUrl || '';
 
     if (req.file && req.file.buffer) {
-      const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
-      imageUrl = cloudResult.secure_url;
+      console.log('📤 Uploading to Cloudinary...');
+      try {
+        const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
+        imageUrl = cloudResult.secure_url;
+        console.log('✅ Cloudinary URL:', imageUrl);
+      } catch (cloudErr) {
+        console.error('❌ Cloudinary error:', cloudErr.message);
+        console.error('❌ Full error:', cloudErr);
+      }
+    } else {
+      console.log('⚠️ No file to upload (req.file or req.file.buffer missing)');
     }
+
+    console.log('📝 Final imageUrl:', imageUrl || '(empty)');
 
     const news = await News.create({
       title,
@@ -241,13 +264,16 @@ const createNews = async (req, res) => {
 
     res.status(201).json(news);
   } catch (error) {
-    console.error('Create news error:', error);
+    console.error('❌ Create news error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
 
 const updateNews = async (req, res) => {
   try {
+    console.log('\n========== UPDATE NEWS ==========');
+    console.log('req.file exists:', !!req.file);
+
     const news = await News.findById(req.params.id);
     if (!news) {
       return res.status(404).json({ message: 'الخبر غير موجود' });
@@ -256,8 +282,14 @@ const updateNews = async (req, res) => {
     const updatedData = { ...req.body };
 
     if (req.file && req.file.buffer) {
-      const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
-      updatedData.imageUrl = cloudResult.secure_url;
+      console.log('📤 Uploading new image to Cloudinary...');
+      try {
+        const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
+        updatedData.imageUrl = cloudResult.secure_url;
+        console.log('✅ New Cloudinary URL:', updatedData.imageUrl);
+      } catch (cloudErr) {
+        console.error('❌ Cloudinary error:', cloudErr.message);
+      }
     }
 
     if (updatedData.isFeatured !== undefined) {
@@ -288,7 +320,7 @@ const updateNews = async (req, res) => {
 
     res.json(updatedNews);
   } catch (error) {
-    console.error('Update news error:', error);
+    console.error('❌ Update news error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
