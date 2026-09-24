@@ -3,7 +3,6 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { sendNotificationEmail } = require('../utils/sendEmail');
 
-
 const getNews = async (req, res) => {
   try {
     const {
@@ -70,7 +69,6 @@ const getBreakingNews = async (req, res) => {
   }
 };
 
-
 const getFeaturedNews = async (req, res) => {
   try {
     const { limit = 5 } = req.query;
@@ -93,7 +91,6 @@ const getFeaturedNews = async (req, res) => {
   }
 };
 
-
 const getPopularNews = async (req, res) => {
   try {
     const { limit = 5 } = req.query;
@@ -107,7 +104,6 @@ const getPopularNews = async (req, res) => {
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
-
 
 const getStats = async (req, res) => {
   try {
@@ -128,7 +124,6 @@ const getStats = async (req, res) => {
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
-
 
 const getNewsById = async (req, res) => {
   try {
@@ -157,7 +152,6 @@ const getNewsById = async (req, res) => {
   }
 };
 
-
 const createNews = async (req, res) => {
   try {
     const {
@@ -170,7 +164,7 @@ const createNews = async (req, res) => {
     }
 
     const imageUrl = req.file
-      ? `/uploads/images/${req.file.filename}`
+      ? req.file.path
       : req.body.imageUrl || '';
 
     const news = await News.create({
@@ -196,8 +190,6 @@ const createNews = async (req, res) => {
         isActive: true,
       }).select('_id name email');
 
-      console.log(`📢 [Notifications] المستخدمون المستهدفون: ${users.length}`);
-
       if (users.length > 0) {
         const notifications = users.map((user) => ({
           recipient: user._id,
@@ -209,36 +201,22 @@ const createNews = async (req, res) => {
         }));
 
         await Notification.insertMany(notifications);
-        console.log(`✅ [Notifications] تم إنشاء ${notifications.length} إشعار داخلي`);
 
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
         const link = `${frontendUrl}/news/${news._id}`;
 
-        console.log(`📧 [Emails] جاري إرسال الإيميلات...`);
-
-        const emailPromises = users.map((user) =>
+        users.forEach((user) => {
           sendNotificationEmail(
             user.email,
             user.name,
             'خبر جديد على موقع نادي المصرية للاتصالات',
             `<p><strong>${title}</strong></p><p>${excerpt || content.substring(0, 200)}...</p>`,
             link
-          ).catch((err) => {
-            console.error(`❌ Email error for ${user.email}:`, err.message);
-            return { success: false, email: user.email };
-          })
-        );
-
-        Promise.allSettled(emailPromises).then((results) => {
-          const success = results.filter(r => r.status === 'fulfilled' && r.value?.success !== false).length;
-          const failed = results.length - success;
-          console.log(`📧 [Emails] نجح: ${success} | فشل: ${failed}`);
+          ).catch((err) => console.error('Email error:', err.message));
         });
-      } else {
-        console.log(`ℹ️ [Notifications] لا يوجد مستخدمون للتنبيه`);
       }
     } catch (notifyErr) {
-      console.error('❌ [Notifications] خطأ:', notifyErr.message);
+      console.error('Notification error:', notifyErr.message);
     }
 
     res.status(201).json(news);
@@ -257,7 +235,7 @@ const updateNews = async (req, res) => {
     const updatedData = { ...req.body };
 
     if (req.file) {
-      updatedData.imageUrl = `/uploads/images/${req.file.filename}`;
+      updatedData.imageUrl = req.file.path;
     }
 
     if (updatedData.isFeatured !== undefined) {
@@ -291,7 +269,6 @@ const updateNews = async (req, res) => {
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
-
 
 const deleteNews = async (req, res) => {
   try {
