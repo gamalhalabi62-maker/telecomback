@@ -38,24 +38,20 @@ const searchMember = async (req, res) => {
     }
 
     const cleaned = String(input).replace(/\D/g, '');
-    if (cleaned.length !== 9) {
+    if (cleaned.length !== 6) {
       return res.status(400).json({
-        message: 'يجب إدخال 9 أرقام بالضبط (6 أرقام الشركة + 3 أرقام العضوية)',
+        message: 'يجب إدخال 6 أرقام بالضبط — مثال: 000029',
       });
     }
 
-    const companyNumber = cleaned.substring(0, 6);
-    const membershipNumber = cleaned.substring(6, 9);
-    const fullNumber = buildFullNumber(companyNumber, membershipNumber);
-
     const member = await Member.findOne({
-      fullMembershipNumber: fullNumber,
+      companyNumber: cleaned,
       membershipType,
     });
 
     if (!member) {
       return res.status(404).json({
-        message: 'لم يتم العثور على عضو بهذه البيانات. تأكد من نوع العضوية والرقم.',
+        message: 'لم يتم العثور على عضو بهذه البيانات. تأكد من نوع العضوية ورقم الشركة.',
         notFound: true,
       });
     }
