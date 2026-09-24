@@ -18,10 +18,8 @@ connectDB();
 
 const app = express();
 
-
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
 
 const allowedOrigins = [
   'http://localhost:5173',
@@ -30,7 +28,7 @@ const allowedOrigins = [
   'https://telecomfront.vercel.app',
   'https://telecomfront-f2owm9e53-jam-b9da.vercel.app',
   process.env.FRONTEND_URL,
-].filter(Boolean); 
+].filter(Boolean);
 
 app.use(
   cors({
@@ -50,20 +48,19 @@ app.use(
   })
 );
 
-app.options('*', cors());
 
 app.use(morgan('dev'));
 
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: 'cross-origin' },
-    contentSecurityPolicy: false, 
+    contentSecurityPolicy: false,
   })
 );
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 200, 
+  windowMs: 15 * 60 * 1000,
+  max: 200,
   message: 'تم تجاوز عدد الطلبات المسموح بها، حاول لاحقاً.',
   standardHeaders: true,
   legacyHeaders: false,
