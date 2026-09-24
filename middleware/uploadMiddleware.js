@@ -1,76 +1,52 @@
 const multer = require('multer');
 const path = require('path');
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const cloudinary = require('../config/cloudinary');
+const fs = require('fs');
 
-// 1. Memory Storage للصور (للأخبار)
-const imageMemoryStorage = multer.memoryStorage();
+// التأكد من وجود مجلد التخزين المؤقت محلياً
+const uploadDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
-const imageFilter = (req, file, cb) => {
-  const allowedExtensions = /jpeg|jpg|png|webp|gif/;
-  const extname = allowedExtensions.test(
-    path.extname(file.originalname).toLowerCase()
-  );
-  const mimetype = allowedExtensions.test(file.mimetype.toLowerCase());
-
-  if (extname && mimetype) {
-    return cb(null, true);
-  }
-  return cb(new Error('يُسمح برفع الصور فقط بصيغ JPG, JPEG, PNG, WEBP, GIF'));
-};
-
-const uploadSingle = multer({
-  storage: imageMemoryStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: imageFilter,
-}).single('image');
-
-
-// 2. Cloudinary Storage للفيديوهات والصور الخاصة بالفيديوهات
-const videoStorage = new CloudinaryStorage({
-  cloudinary,
-  params: async (req, file) => {
-    if (file.fieldname === 'thumbnail') {
-      return {
-        folder: 'telecom-egypt/thumbnails',
-        resource_type: 'image',
-        allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-      };
-    }
-
-    return {
-      folder: 'telecom-egypt/videos',
-      resource_type: 'video',
-      allowed_formats: ['mp4', 'webm', 'ogg', 'mov', 'avi'],
-    };
+// استخدام Disk Storage المؤقت لملفات الفيديو الكبيرة لتجنب انهيار الـ RAM
+const diskStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
   },
 });
 
-const videoFilter = (req, file, cb) => {
-  if (file.fieldname === 'thumbnail') {
-    return imageFilter(req, file, cb);
+const fileFilter = (req, file, cb) => {
+  if (file.fieldname === 'image' || file.fieldname === 'thumbnail') {
+    const allowedImages = /jpeg|jpg|png|webp|gif/;
+    const extname = allowedImages.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedImages.test(file.mimetype.toLowerCase());
+    if (extname && mimetype) return cb(null, true);
+    return cb(new Error('يُسمح برفع الصور فقط بصيغ JPG, PNG, WEBP'));
   }
 
-  const allowedExtensions = /mp4|webm|ogg|mov|avi/;
-  const extname = allowedExtensions.test(
-    path.extname(file.originalname).toLowerCase()
-  );
-  const mimetype = /^video\//i.test(file.mimetype);
-
-  if (extname && mimetype) {
-    return cb(null, true);
+  if (file.fieldname === 'video') {
+    const allowedVideos = /mp4|webm|ogg|mov|avi/;
+    const extname = allowedVideos.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = /^video\//i.test(file.mimetype);
+    if (extname && mimetype) return cb(null, true);
+    return cb(new Error('يُسمح برفع ملفات الفيديو فقط'));
   }
 
-  return cb(new Error('يُسمح برفع ملفات الفيديو فقط'));
+  cb(null, true);
 };
 
-const uploadVideo = multer({
-  storage: videoStorage,
-  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
-  fileFilter: videoFilter,
+const upload = multer({
+  storage: diskStorage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // حد أقصى 100 ميجابايت للفيديو
+  fileFilter: fileFilter,
 });
 
-const uploadVideoFields = uploadVideo.fields([
+const uploadSingle = upload.single('image');
+const uploadVideoFields = upload.fields([
   { name: 'video', maxCount: 1 },
   { name: 'thumbnail', maxCount: 1 },
 ]);

@@ -1,4 +1,5 @@
 const Video = require('../models/Video');
+const fs = require('fs');
 
 const getVideos = async (req, res) => {
   try {
@@ -9,8 +10,8 @@ const getVideos = async (req, res) => {
     if (featured === 'true') query.isFeatured = true;
     if (search) {
       query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
+        { title: { $regex: search,$options: 'i' } },
+        { description: { $regex: search,$options: 'i' } },
       ];
     }
 
@@ -76,20 +77,33 @@ const createVideo = async (req, res) => {
 
     if (!title) return res.status(400).json({ message: 'العنوان مطلوب' });
 
-    let videoUrl = '';
+    let videoUrl = req.body.videoUrl || '';
     let thumbnailUrl = '';
 
+    // معالجة الملفات المرفوعة من جهاز الأدمن
     if (req.files) {
-      if (req.files.video) {
-        videoUrl = req.files.video[0].path || req.files.video[0].secure_url || '';
+      // 1. معالجة ملف الفيديو
+      if (req.files.video && req.files.video[0]) {
+        const file = req.files.video[0];
+        // حفظ الرابط النسبي للوصول للملف من السيرفر
+        videoUrl = `/uploads/${file.filename}`;
       }
-      if (req.files.thumbnail) {
-        thumbnailUrl = req.files.thumbnail[0].path || req.files.thumbnail[0].secure_url || '';
+
+      // 2. معالجة الصورة المصغرة (تحويلها إلى Base64 لضمان عرضها بثبات تام)
+      if (req.files.thumbnail && req.files.thumbnail[0]) {
+        const thumbFile = req.files.thumbnail[0];
+        const fileBuffer = thumbFile.buffer || fs.readFileSync(thumbFile.path);
+        const b64 = Buffer.from(fileBuffer).toString('base64');
+        thumbnailUrl = `data:${thumbFile.mimetype};base64,${b64}`;
+        
+        // حذف الملف المؤقت إذا تم تخزينه محلياً لتفريغ المساحة
+        if (thumbFile.path && fs.existsSync(thumbFile.path)) {
+          fs.unlinkSync(thumbFile.path);
+        }
       }
     }
 
-    if (!videoUrl && req.body.videoUrl) videoUrl = req.body.videoUrl;
-    if (!videoUrl) return res.status(400).json({ message: 'الفيديو مطلوب' });
+    if (!videoUrl) return res.status(400).json({ message: 'ملف الفيديو أو الرابط مطلوب' });
 
     const video = await Video.create({
       title,
@@ -117,11 +131,18 @@ const updateVideo = async (req, res) => {
     const updatedData = { ...req.body };
 
     if (req.files) {
-      if (req.files.video) {
-        updatedData.videoUrl = req.files.video[0].path || req.files.video[0].secure_url || '';
+      if (req.files.video && req.files.video[0]) {
+        updatedData.videoUrl = `/uploads/${req.files.video[0].filename}`;
       }
-      if (req.files.thumbnail) {
-        updatedData.thumbnailUrl = req.files.thumbnail[0].path || req.files.thumbnail[0].secure_url || '';
+      if (req.files.thumbnail && req.files.thumbnail[0]) {
+        const thumbFile = req.files.thumbnail[0];
+        const fileBuffer = thumbFile.buffer || fs.readFileSync(thumbFile.path);
+        const b64 = Buffer.from(fileBuffer).toString('base64');
+        updatedData.thumbnailUrl = `data:${thumbFile.mimetype};base64,${b64}`;
+
+        if (thumbFile.path && fs.existsSync(thumbFile.path)) {
+          fs.unlinkSync(thumbFile.path);
+        }
       }
     }
 
@@ -145,6 +166,14 @@ const deleteVideo = async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
     if (!video) return res.status(404).json({ message: 'الفيديو غير موجود' });
+
+    // حذف ملف الفيديو المحلي إذا كان مخزناً محلياً
+    if (video.videoUrl && video.videoUrl.startsWith('/uploads/')) {
+      const filePath = path.join(__dirname, '..', video.videoUrl);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    }
 
     await video.deleteOne();
     res.json({ message: 'تم حذف الفيديو بنجاح' });
