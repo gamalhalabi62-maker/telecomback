@@ -2,13 +2,14 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// التأكد من وجود مجلد التخزين المؤقت محلياً
 const uploadDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// استخدام Disk Storage المؤقت لملفات الفيديو الكبيرة لتجنب انهيار الـ RAM
+// استخدام Memory Storage للصور و Disk Storage للفيديوهات لتوفير الذاكرة
+const storage = multer.memoryStorage();
+
 const diskStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
@@ -40,13 +41,19 @@ const fileFilter = (req, file, cb) => {
 };
 
 const upload = multer({
+  storage: storage,
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: fileFilter,
+});
+
+const uploadVideoOnly = multer({
   storage: diskStorage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // حد أقصى 100 ميجابايت للفيديو
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: fileFilter,
 });
 
 const uploadSingle = upload.single('image');
-const uploadVideoFields = upload.fields([
+const uploadVideoFields = uploadVideoOnly.fields([
   { name: 'video', maxCount: 1 },
   { name: 'thumbnail', maxCount: 1 },
 ]);

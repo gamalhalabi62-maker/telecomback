@@ -1,5 +1,22 @@
 const Video = require('../models/Video');
+const cloudinary = require('../config/cloudinary');
 const fs = require('fs');
+
+const uploadBufferToCloudinary = (fileBuffer, folderName = 'telecom-egypt/videos') => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: folderName,
+        resource_type: 'auto',
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    uploadStream.end(fileBuffer);
+  });
+};
 
 const getVideos = async (req, res) => {
   try {
@@ -80,23 +97,23 @@ const createVideo = async (req, res) => {
     let videoUrl = req.body.videoUrl || '';
     let thumbnailUrl = '';
 
-    // معالجة الملفات المرفوعة من جهاز الأدمن
     if (req.files) {
-      // 1. معالجة ملف الفيديو
       if (req.files.video && req.files.video[0]) {
         const file = req.files.video[0];
-        // حفظ الرابط النسبي للوصول للملف من السيرفر
         videoUrl = `/uploads/${file.filename}`;
       }
 
-      // 2. معالجة الصورة المصغرة (تحويلها إلى Base64 لضمان عرضها بثبات تام)
       if (req.files.thumbnail && req.files.thumbnail[0]) {
         const thumbFile = req.files.thumbnail[0];
-        const fileBuffer = thumbFile.buffer || fs.readFileSync(thumbFile.path);
-        const b64 = Buffer.from(fileBuffer).toString('base64');
-        thumbnailUrl = `data:${thumbFile.mimetype};base64,${b64}`;
-        
-        // حذف الملف المؤقت إذا تم تخزينه محلياً لتفريغ المساحة
+        try {
+          const fileBuffer = thumbFile.buffer || fs.readFileSync(thumbFile.path);
+          const cloudResult = await uploadBufferToCloudinary(fileBuffer, 'telecom-egypt/thumbnails');
+          thumbnailUrl = cloudResult.secure_url;
+        } catch (cloudErr) {
+          const fileBuffer = thumbFile.buffer || fs.readFileSync(thumbFile.path);
+          const b64 = Buffer.from(fileBuffer).toString('base64');
+          thumbnailUrl = `data:${thumbFile.mimetype};base64,${b64}`;
+        }
         if (thumbFile.path && fs.existsSync(thumbFile.path)) {
           fs.unlinkSync(thumbFile.path);
         }
@@ -136,10 +153,15 @@ const updateVideo = async (req, res) => {
       }
       if (req.files.thumbnail && req.files.thumbnail[0]) {
         const thumbFile = req.files.thumbnail[0];
-        const fileBuffer = thumbFile.buffer || fs.readFileSync(thumbFile.path);
-        const b64 = Buffer.from(fileBuffer).toString('base64');
-        updatedData.thumbnailUrl = `data:${thumbFile.mimetype};base64,${b64}`;
-
+        try {
+          const fileBuffer = thumbFile.buffer || fs.readFileSync(thumbFile.path);
+          const cloudResult = await uploadBufferToCloudinary(fileBuffer, 'telecom-egypt/thumbnails');
+          updatedData.thumbnailUrl = cloudResult.secure_url;
+        } catch (cloudErr) {
+          const fileBuffer = thumbFile.buffer || fs.readFileSync(thumbFile.path);
+          const b64 = Buffer.from(fileBuffer).toString('base64');
+          updatedData.thumbnailUrl = `data:${thumbFile.mimetype};base64,${b64}`;
+        }
         if (thumbFile.path && fs.existsSync(thumbFile.path)) {
           fs.unlinkSync(thumbFile.path);
         }
@@ -167,7 +189,6 @@ const deleteVideo = async (req, res) => {
     const video = await Video.findById(req.params.id);
     if (!video) return res.status(404).json({ message: 'الفيديو غير موجود' });
 
-    // حذف ملف الفيديو المحلي إذا كان مخزناً محلياً
     if (video.videoUrl && video.videoUrl.startsWith('/uploads/')) {
       const filePath = path.join(__dirname, '..', video.videoUrl);
       if (fs.existsSync(filePath)) {

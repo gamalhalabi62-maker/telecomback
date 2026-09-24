@@ -2,6 +2,23 @@ const News = require('../models/News');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { sendNotificationEmail } = require('../utils/sendEmail');
+const cloudinary = require('../config/cloudinary');
+
+const uploadBufferToCloudinary = (fileBuffer, folderName = 'telecom-egypt/news') => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: folderName,
+        resource_type: 'auto',
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    uploadStream.end(fileBuffer);
+  });
+};
 
 const getNews = async (req, res) => {
   try {
@@ -17,8 +34,8 @@ const getNews = async (req, res) => {
     if (urgent === 'true') query.isUrgent = true;
     if (search) {
       query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { content: { $regex: search, $options: 'i' } },
+        { title: { $regex: search,$options: 'i' } },
+        { content: { $regex: search,$options: 'i' } },
       ];
     }
 
@@ -112,7 +129,7 @@ const getStats = async (req, res) => {
       { $group: { _id: null, total: { $sum: '$views' } } },
     ]);
     const categoriesCount = await News.aggregate([
-      { $group: { _id: '$category', count: { $sum: 1 } } },
+      { $group: { _id: '$category', count: {$sum: 1 } } },
     ]);
 
     res.json({
@@ -156,18 +173,31 @@ const createNews = async (req, res) => {
   try {
     const {
       title, content, excerpt, category, isFeatured,
-      isBreaking, isUrgent, priority, tags, imageUrl,
+      isBreaking, isUrgent, priority, tags,
     } = req.body;
 
     if (!title || !content) {
       return res.status(400).json({ message: 'العنوان والمحتوى مطلوبان' });
     }
 
+    let imageUrl = req.body.imageUrl || '';
+
+    if (req.file && req.file.buffer) {
+      try {
+        const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
+        imageUrl = cloudResult.secure_url;
+      } catch (cloudErr) {
+        console.error('Cloudinary upload error:', cloudErr);
+        const b64 = Buffer.from(req.file.buffer).toString('base64');
+        imageUrl = `data:${req.file.mimetype};base64,${b64}`;
+      }
+    }
+
     const news = await News.create({
       title,
       content,
       excerpt: excerpt || content.substring(0, 150) + '...',
-      imageUrl: imageUrl || '',
+      imageUrl,
       category: category || 'general',
       isFeatured: isFeatured === 'true' || isFeatured === true,
       isBreaking: isBreaking === 'true' || isBreaking === true,
@@ -230,6 +260,16 @@ const updateNews = async (req, res) => {
     }
 
     const updatedData = { ...req.body };
+
+    if (req.file && req.file.buffer) {
+      try {
+        const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
+        updatedData.imageUrl = cloudResult.secure_url;
+      } catch (cloudErr) {
+        const b64 = Buffer.from(req.file.buffer).toString('base64');
+        updatedData.imageUrl = `data:${req.file.mimetype};base64,${b64}`;
+      }
+    }
 
     if (updatedData.isFeatured !== undefined) {
       updatedData.isFeatured =

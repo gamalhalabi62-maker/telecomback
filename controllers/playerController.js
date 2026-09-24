@@ -1,4 +1,22 @@
 const Player = require('../models/Player');
+const cloudinary = require('../config/cloudinary');
+
+// دالة مساعدة لرفع الـ Buffer إلى Cloudinary
+const uploadBufferToCloudinary = (fileBuffer, folderName = 'telecom-egypt/players') => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: folderName,
+        resource_type: 'auto',
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    uploadStream.end(fileBuffer);
+  });
+};
 
 const getPlayers = async (req, res) => {
   try {
@@ -7,7 +25,7 @@ const getPlayers = async (req, res) => {
 
     if (position) query.position = position;
     if (active === 'true') query.isActive = true;
-    if (search) query.name = { $regex: search, $options: 'i' };
+    if (search) query.name = { $regex: search,$options: 'i' };
 
     const players = await Player.find(query).sort({ order: 1, number: 1 });
     res.json({ players, total: players.length });
@@ -79,11 +97,26 @@ const createPlayer = async (req, res) => {
     const {
       name, number, position, nationality, birthDate,
       height, weight, bio, isCaptain, isActive, order,
-      stats, imageUrl,
+      stats,
     } = req.body;
 
     if (!name || !number || !position) {
       return res.status(400).json({ message: 'الاسم والرقم والمركز مطلوبون' });
+    }
+
+    let imageUrl = req.body.imageUrl || '';
+
+    // رفع الصورة إلى Cloudinary إذا وجد ملف مرفوع
+    if (req.file && req.file.buffer) {
+      try {
+        const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
+        imageUrl = cloudResult.secure_url;
+      } catch (cloudErr) {
+        console.error('Cloudinary upload error:', cloudErr);
+        // التراجع لاستخدام Base64 في حال فشل Cloudinary
+        const b64 = Buffer.from(req.file.buffer).toString('base64');
+        imageUrl = `data:${req.file.mimetype};base64,${b64}`;
+      }
     }
 
     const playerData = {
@@ -95,7 +128,7 @@ const createPlayer = async (req, res) => {
       height: height ? Number(height) : undefined,
       weight: weight ? Number(weight) : undefined,
       bio: bio || '',
-      imageUrl: imageUrl || '',
+      imageUrl,
       isCaptain: isCaptain === 'true' || isCaptain === true,
       isActive: isActive !== 'false' && isActive !== false,
       order: Number(order) || 0,
@@ -126,6 +159,16 @@ const updatePlayer = async (req, res) => {
     if (!player) return res.status(404).json({ message: 'اللاعب غير موجود' });
 
     const updatedData = { ...req.body };
+
+    if (req.file && req.file.buffer) {
+      try {
+        const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
+        updatedData.imageUrl = cloudResult.secure_url;
+      } catch (cloudErr) {
+        const b64 = Buffer.from(req.file.buffer).toString('base64');
+        updatedData.imageUrl = `data:${req.file.mimetype};base64,${b64}`;
+      }
+    }
 
     if (updatedData.number !== undefined) updatedData.number = Number(updatedData.number);
     if (updatedData.height !== undefined && updatedData.height !== '')
