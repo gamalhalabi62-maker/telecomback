@@ -9,7 +9,6 @@ const fs = require('fs');
 const connectDB = require('./config/db');
 
 dotenv.config();
-
 connectDB();
 
 ['uploads/images', 'uploads/videos', 'uploads/thumbnails'].forEach((dir) => {
@@ -35,7 +34,6 @@ app.use(
   cors({
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
-
       if (allowedOrigins.indexOf(origin) !== -1) {
         callback(null, true);
       } else {

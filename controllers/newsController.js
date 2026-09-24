@@ -163,9 +163,19 @@ const createNews = async (req, res) => {
       return res.status(400).json({ message: 'العنوان والمحتوى مطلوبان' });
     }
 
-    const imageUrl = req.file
-      ? req.file.path
-      : req.body.imageUrl || '';
+    let imageUrl = req.body.imageUrl || '';
+
+    if (req.file) {
+      console.log('File received:', {
+        fieldname: req.file.fieldname,
+        originalname: req.file.originalname,
+        path: req.file.path,
+        filename: req.file.filename,
+        size: req.file.size,
+      });
+      imageUrl = req.file.path || req.file.secure_url || req.file.url || '';
+      console.log('Image URL:', imageUrl);
+    }
 
     const news = await News.create({
       title,
@@ -221,6 +231,7 @@ const createNews = async (req, res) => {
 
     res.status(201).json(news);
   } catch (error) {
+    console.error('Create news error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
@@ -235,7 +246,7 @@ const updateNews = async (req, res) => {
     const updatedData = { ...req.body };
 
     if (req.file) {
-      updatedData.imageUrl = req.file.path;
+      updatedData.imageUrl = req.file.path || req.file.secure_url || req.file.url || '';
     }
 
     if (updatedData.isFeatured !== undefined) {
@@ -266,6 +277,7 @@ const updateNews = async (req, res) => {
 
     res.json(updatedNews);
   } catch (error) {
+    console.error('Update news error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
