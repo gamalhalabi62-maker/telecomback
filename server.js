@@ -74,7 +74,7 @@ app.use('/api/notifications', require('./routes/notificationRoutes'));
 
 app.use('/api/test', require('./routes/testRoutes'));
 
-
+app.use('/api/elections', require('./routes/electionRoutes'));
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
