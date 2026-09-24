@@ -3,11 +3,7 @@ const path = require('path');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const cloudinary = require('../config/cloudinary');
 
-/*
-|--------------------------------------------------------------------------
-| IMAGE UPLOAD (Memory Storage for Base64 Conversion)
-|--------------------------------------------------------------------------
-*/
+// 1. Memory Storage للصور (للأخبار)
 const imageMemoryStorage = multer.memoryStorage();
 
 const imageFilter = (req, file, cb) => {
@@ -23,18 +19,14 @@ const imageFilter = (req, file, cb) => {
   return cb(new Error('يُسمح برفع الصور فقط بصيغ JPG, JPEG, PNG, WEBP, GIF'));
 };
 
-const newsImageUpload = multer({
+const uploadSingle = multer({
   storage: imageMemoryStorage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: imageFilter,
-});
+}).single('image');
 
 
-/*
-|--------------------------------------------------------------------------
-| VIDEO UPLOAD (Cloudinary Storage for Videos)
-|--------------------------------------------------------------------------
-*/
+// 2. Cloudinary Storage للفيديوهات والصور الخاصة بالفيديوهات
 const videoStorage = new CloudinaryStorage({
   cloudinary,
   params: async (req, file) => {
@@ -78,27 +70,13 @@ const uploadVideo = multer({
   fileFilter: videoFilter,
 });
 
-
-/*
-|--------------------------------------------------------------------------
-| MIDDLEWARES EXPORTS
-|--------------------------------------------------------------------------
-*/
-const uploadSingle = newsImageUpload.single('image');
-
 const uploadVideoFields = uploadVideo.fields([
-  {
-    name: 'video',
-    maxCount: 1,
-  },
-  {
-    name: 'thumbnail',
-    maxCount: 1,
-  },
+  { name: 'video', maxCount: 1 },
+  { name: 'thumbnail', maxCount: 1 },
 ]);
 
 module.exports = {
   uploadSingle,
   uploadImage: uploadSingle,
-  uploadVideoFields, // تم إضافتها لحل خطأ الـ undefined في videoRoutes
+  uploadVideoFields,
 };

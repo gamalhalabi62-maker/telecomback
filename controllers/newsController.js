@@ -2,6 +2,24 @@ const News = require('../models/News');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { sendNotificationEmail } = require('../utils/sendEmail');
+const cloudinary = require('../config/cloudinary');
+
+// دالة مساعدة لرفع الـ Buffer إلى Cloudinary بأمان تام
+const uploadBufferToCloudinary = (fileBuffer) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'telecom-egypt/news',
+        resource_type: 'auto',
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    uploadStream.end(fileBuffer);
+  });
+};
 
 const getNews = async (req, res) => {
   try {
@@ -165,10 +183,15 @@ const createNews = async (req, res) => {
 
     let imageUrl = req.body.imageUrl || '';
 
-    // تحويل الصورة المرفوعة مباشرة إلى Base64 String لتخزينها في قاعدة البيانات
+    // رفع الصورة إلى Cloudinary والحصول على الرابط الحقيقي
     if (req.file && req.file.buffer) {
-      const b64 = Buffer.from(req.file.buffer).toString('base64');
-      imageUrl = `data:${req.file.mimetype};base64,${b64}`;
+      try {
+        const cloudinaryResult = await uploadBufferToCloudinary(req.file.buffer);
+        imageUrl = cloudinaryResult.secure_url;
+      } catch (cloudErr) {
+        console.error('❌ Cloudinary Upload Error:', cloudErr);
+        return res.status(500).json({ message: 'فشل رفع الصورة إلى السحابة', error: cloudErr.message });
+      }
     }
 
     const news = await News.create({
@@ -243,29 +266,29 @@ const updateNews = async (req, res) => {
 
     const updatedData = { ...req.body };
 
-    // تحديث الصورة بـ Base64 جديدة إذا تم رفع صورة
+    // رفع صورة جديدة لـ Cloudinary إذا تم إرفاق صورة عند التحديث
     if (req.file && req.file.buffer) {
-      const b64 = Buffer.from(req.file.buffer).toString('base64');
-      updatedData.imageUrl = `data:${req.file.mimetype};base64,${b64}`;
+      try {
+        const cloudinaryResult = await uploadBufferToCloudinary(req.file.buffer);
+        updatedData.imageUrl = cloudinaryResult.secure_url;
+      } catch (cloudErr) {
+        console.error('❌ Cloudinary Update Error:', cloudErr);
+        return res.status(500).json({ message: 'فشل رفع الصورة الجديدة', error: cloudErr.message });
+      }
     }
 
     if (updatedData.isFeatured !== undefined) {
-      updatedData.isFeatured =
-        updatedData.isFeatured === 'true' || updatedData.isFeatured === true;
+      updatedData.isFeatured = updatedData.isFeatured === 'true' || updatedData.isFeatured === true;
     }
     if (updatedData.isBreaking !== undefined) {
-      updatedData.isBreaking =
-        updatedData.isBreaking === 'true' || updatedData.isBreaking === true;
+      updatedData.isBreaking = updatedData.isBreaking === 'true' || updatedData.isBreaking === true;
     }
     if (updatedData.isUrgent !== undefined) {
-      updatedData.isUrgent =
-        updatedData.isUrgent === 'true' || updatedData.isUrgent === true;
+      updatedData.isUrgent = updatedData.isUrgent === 'true' || updatedData.isUrgent === true;
     }
-
     if (updatedData.priority !== undefined) {
       updatedData.priority = Number(updatedData.priority) || 0;
     }
-
     if (updatedData.tags && !Array.isArray(updatedData.tags)) {
       updatedData.tags = updatedData.tags.split(',').map(t => t.trim());
     }
