@@ -14,9 +14,34 @@ const newsSchema = new mongoose.Schema({
     type: String,
     maxlength: 300,
   },
+  mediaType: {
+    type: String,
+    enum: ['none', 'image', 'video', 'both'],
+    default: 'none',
+  },
   imageUrl: {
     type: String,
     default: '',
+  },
+  imagePublicId: {
+    type: String,
+    default: '',
+  },
+  videoUrl: {
+    type: String,
+    default: '',
+  },
+  videoPublicId: {
+    type: String,
+    default: '',
+  },
+  videoThumbnail: {
+    type: String,
+    default: '',
+  },
+  videoDuration: {
+    type: Number,
+    default: 0,
   },
   category: {
     type: String,
@@ -37,7 +62,7 @@ const newsSchema = new mongoose.Schema({
   },
   priority: {
     type: Number,
-    default: 0, 
+    default: 0,
   },
   views: {
     type: Number,

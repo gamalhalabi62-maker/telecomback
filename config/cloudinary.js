@@ -3,7 +3,6 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-// التحقق من وجود المتغيرات
 const requiredEnvVars = [
   'CLOUDINARY_CLOUD_NAME',
   'CLOUDINARY_API_KEY',
@@ -23,7 +22,6 @@ cloudinary.config({
   secure: true,
 });
 
-// اختبار الاتصال عند بدء التشغيل
 cloudinary.api
   .ping()
   .then((res) => console.log('✅ Cloudinary connected:', res.status))

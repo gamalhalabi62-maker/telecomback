@@ -31,11 +31,17 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+  limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter,
 });
 
 const uploadSingle = upload.single('image');
+
+const uploadNewsFields = upload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'video', maxCount: 1 },
+]);
+
 const uploadVideoFields = upload.fields([
   { name: 'video', maxCount: 1 },
   { name: 'thumbnail', maxCount: 1 },
@@ -44,6 +50,7 @@ const uploadVideoFields = upload.fields([
 module.exports = {
   uploadSingle,
   uploadImage: uploadSingle,
+  uploadNewsFields,
   uploadVideoFields,
   upload,
 };

@@ -4,28 +4,17 @@ const User = require('../models/User');
 const { sendNotificationEmail } = require('../utils/sendEmail');
 const cloudinary = require('../config/cloudinary');
 
-/**
- * رفع Buffer إلى Cloudinary
- * - resource_type: 'image' صراحةً (ليس 'auto')
- * - timeout 120 ثانية
- * - تحقق من وجود buffer و secure_url
- * - transformation لتحسين الصور
- */
-const uploadBufferToCloudinary = (
-  fileBuffer,
-  folderName = 'telecom-egypt/news',
-  resourceType = 'image'
-) => {
+const uploadImageToCloudinary = (fileBuffer, folderName = 'telecom-egypt/news') => {
   return new Promise((resolve, reject) => {
     if (!fileBuffer || fileBuffer.length === 0) {
-      return reject(new Error('File buffer is empty or missing'));
+      return reject(new Error('Image buffer is empty'));
     }
 
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: folderName,
-        resource_type: resourceType,
-        timeout: 120000, // 2 دقيقة
+        resource_type: 'image',
+        timeout: 120000,
         transformation: [
           { width: 1600, height: 1200, crop: 'limit' },
           { quality: 'auto:good' },
@@ -34,18 +23,18 @@ const uploadBufferToCloudinary = (
       },
       (error, result) => {
         if (error) {
-          console.error('❌ Cloudinary upload_stream error:', error);
+          console.error('❌ Cloudinary image error:', error);
           return reject(error);
         }
         if (!result || !result.secure_url) {
-          return reject(new Error('Cloudinary returned no secure_url'));
+          return reject(new Error('Cloudinary returned no secure_url for image'));
         }
         resolve(result);
       }
     );
 
     uploadStream.on('error', (err) => {
-      console.error('❌ Upload stream error:', err);
+      console.error('❌ Image stream error:', err);
       reject(err);
     });
 
@@ -53,15 +42,54 @@ const uploadBufferToCloudinary = (
   });
 };
 
-/* ============================================================
- *  GET  /api/news
- *  قائمة الأخبار مع فلترة وترتيب وترقيم صفحات
- * ============================================================ */
+const uploadVideoToCloudinary = (fileBuffer, folderName = 'telecom-egypt/news/videos') => {
+  return new Promise((resolve, reject) => {
+    if (!fileBuffer || fileBuffer.length === 0) {
+      return reject(new Error('Video buffer is empty'));
+    }
+
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: folderName,
+        resource_type: 'video',
+        timeout: 300000,
+      },
+      (error, result) => {
+        if (error) {
+          console.error('❌ Cloudinary video error:', error);
+          return reject(error);
+        }
+        if (!result || !result.secure_url) {
+          return reject(new Error('Cloudinary returned no secure_url for video'));
+        }
+        resolve(result);
+      }
+    );
+
+    uploadStream.on('error', (err) => {
+      console.error('❌ Video stream error:', err);
+      reject(err);
+    });
+
+    uploadStream.end(fileBuffer);
+  });
+};
+
+const deleteFromCloudinary = async (publicId, resourceType = 'image') => {
+  if (!publicId) return;
+  try {
+    await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
+    console.log(`✅ Deleted from Cloudinary: ${publicId} (${resourceType})`);
+  } catch (err) {
+    console.error(`❌ Cloudinary delete error for ${publicId}:`, err.message);
+  }
+};
+
 const getNews = async (req, res) => {
   try {
     const {
       category, search, page = 1, limit = 10, sort = 'latest',
-      featured, breaking, urgent,
+      featured, breaking, urgent, mediaType,
     } = req.query;
 
     let query = {};
@@ -70,6 +98,7 @@ const getNews = async (req, res) => {
     if (featured === 'true') query.isFeatured = true;
     if (breaking === 'true') query.isBreaking = true;
     if (urgent === 'true') query.isUrgent = true;
+    if (mediaType) query.mediaType = mediaType;
 
     if (search) {
       query.$or = [
@@ -103,9 +132,6 @@ const getNews = async (req, res) => {
   }
 };
 
-/* ============================================================
- *  GET  /api/news/breaking
- * ============================================================ */
 const getBreakingNews = async (req, res) => {
   try {
     const { limit = 5 } = req.query;
@@ -115,13 +141,13 @@ const getBreakingNews = async (req, res) => {
     })
       .sort({ priority: -1, createdAt: -1 })
       .limit(Number(limit))
-      .select('title _id category isBreaking isUrgent priority createdAt imageUrl');
+      .select('title _id category isBreaking isUrgent priority createdAt imageUrl videoThumbnail mediaType');
 
     if (news.length === 0) {
       news = await News.find({})
         .sort({ createdAt: -1 })
         .limit(Number(limit))
-        .select('title _id category isBreaking isUrgent priority createdAt imageUrl');
+        .select('title _id category isBreaking isUrgent priority createdAt imageUrl videoThumbnail mediaType');
     }
 
     res.json({ news });
@@ -131,9 +157,6 @@ const getBreakingNews = async (req, res) => {
   }
 };
 
-/* ============================================================
- *  GET  /api/news/featured
- * ============================================================ */
 const getFeaturedNews = async (req, res) => {
   try {
     const { limit = 5 } = req.query;
@@ -157,16 +180,13 @@ const getFeaturedNews = async (req, res) => {
   }
 };
 
-/* ============================================================
- *  GET  /api/news/popular
- * ============================================================ */
 const getPopularNews = async (req, res) => {
   try {
     const { limit = 5 } = req.query;
     const news = await News.find({})
       .sort({ views: -1 })
       .limit(Number(limit))
-      .select('title imageUrl views createdAt category excerpt');
+      .select('title imageUrl videoThumbnail mediaType views createdAt category excerpt');
 
     res.json({ news });
   } catch (error) {
@@ -175,9 +195,6 @@ const getPopularNews = async (req, res) => {
   }
 };
 
-/* ============================================================
- *  GET  /api/news/stats
- * ============================================================ */
 const getStats = async (req, res) => {
   try {
     const totalNews = await News.countDocuments();
@@ -187,11 +204,15 @@ const getStats = async (req, res) => {
     const categoriesCount = await News.aggregate([
       { $group: { _id: '$category', count: { $sum: 1 } } },
     ]);
+    const mediaTypeCount = await News.aggregate([
+      { $group: { _id: '$mediaType', count: { $sum: 1 } } },
+    ]);
 
     res.json({
       totalNews,
       totalViews: totalViews[0]?.total || 0,
       categoriesCount,
+      mediaTypeCount,
     });
   } catch (error) {
     console.error('❌ getStats error:', error);
@@ -199,9 +220,6 @@ const getStats = async (req, res) => {
   }
 };
 
-/* ============================================================
- *  GET  /api/news/:id
- * ============================================================ */
 const getNewsById = async (req, res) => {
   try {
     const news = await News.findById(req.params.id).populate('author', 'name');
@@ -218,7 +236,7 @@ const getNewsById = async (req, res) => {
     })
       .sort({ createdAt: -1 })
       .limit(3)
-      .select('title imageUrl createdAt category excerpt');
+      .select('title imageUrl videoThumbnail mediaType createdAt category excerpt');
 
     res.json({
       ...news.toObject(),
@@ -230,74 +248,111 @@ const getNewsById = async (req, res) => {
   }
 };
 
-/* ============================================================
- *  POST  /api/news   (admin)
- *  multipart/form-data بحقل اسمه "image"
- * ============================================================ */
 const createNews = async (req, res) => {
   try {
-    console.log('\n========== CREATE NEWS ==========');
-    console.log('req.body keys:', Object.keys(req.body));
-    console.log('req.file exists:', !!req.file);
-    console.log(
-      'req.file details:',
-      req.file
-        ? {
-            fieldname: req.file.fieldname,
-            originalname: req.file.originalname,
-            mimetype: req.file.mimetype,
-            size: req.file.size,
-            hasBuffer: !!req.file.buffer,
-            bufferLength: req.file.buffer?.length,
-          }
-        : 'NO FILE'
-    );
-    console.log('=================================\n');
-
     const {
       title, content, excerpt, category, isFeatured,
       isBreaking, isUrgent, priority, tags,
+      mediaType: rawMediaType,
     } = req.body;
 
     if (!title || !content) {
       return res.status(400).json({ message: 'العنوان والمحتوى مطلوبان' });
     }
 
-    let imageUrl = req.body.imageUrl || '';
-
-    // ✅ إذا وُجد ملف، يجب أن يُرفع بنجاح أو نُرجع خطأ 500
-    if (req.file) {
-      if (!req.file.buffer || req.file.buffer.length === 0) {
-        return res.status(400).json({ message: 'الملف المرفوع فارغ أو تالف' });
-      }
-
-      console.log('📤 Uploading to Cloudinary...');
-      try {
-        const cloudResult = await uploadBufferToCloudinary(
-          req.file.buffer,
-          'telecom-egypt/news',
-          'image'
-        );
-        imageUrl = cloudResult.secure_url;
-        console.log('✅ Cloudinary URL:', imageUrl);
-      } catch (cloudErr) {
-        console.error('❌ Cloudinary upload failed:', cloudErr);
-        return res.status(500).json({
-          message: 'فشل رفع الصورة. يرجى المحاولة مرة أخرى.',
-          error: cloudErr.message,
-        });
-      }
-    } else {
-      console.log('⚠️ No file attached to request');
+    let mediaType = rawMediaType || 'none';
+    if (!['none', 'image', 'video', 'both'].includes(mediaType)) {
+      mediaType = 'none';
     }
 
-    console.log('📝 Final imageUrl:', imageUrl || '(empty)');
+    const imageFile = req.files?.image?.[0];
+    const videoFile = req.files?.video?.[0];
+
+    let imageUrl = '';
+    let imagePublicId = '';
+    let videoUrl = '';
+    let videoPublicId = '';
+    let videoThumbnail = '';
+    let videoDuration = 0;
+
+    if (imageFile) {
+      try {
+        const imgResult = await uploadImageToCloudinary(imageFile.buffer);
+        imageUrl = imgResult.secure_url;
+        imagePublicId = imgResult.public_id;
+      } catch (err) {
+        console.error('❌ Image upload failed:', err);
+        return res.status(500).json({
+          message: 'فشل رفع الصورة. يرجى المحاولة مرة أخرى.',
+          error: err.message,
+        });
+      }
+    }
+
+    if (videoFile) {
+      try {
+        const vidResult = await uploadVideoToCloudinary(videoFile.buffer);
+        videoUrl = vidResult.secure_url;
+        videoPublicId = vidResult.public_id;
+        videoDuration = Math.round(vidResult.duration || 0);
+
+        videoThumbnail = vidResult.secure_url
+          .replace('/video/upload/', '/video/upload/so_auto/')
+          .replace(/\.[^.]+$/, '.jpg');
+      } catch (err) {
+        console.error('❌ Video upload failed:', err);
+        if (imagePublicId) await deleteFromCloudinary(imagePublicId, 'image');
+        return res.status(500).json({
+          message: 'فشل رفع الفيديو. يرجى المحاولة مرة أخرى.',
+          error: err.message,
+        });
+      }
+    }
+
+    if (mediaType === 'image' && !imageUrl) {
+      return res.status(400).json({ message: 'يجب إرفاق صورة عند اختيار نوع "صورة"' });
+    }
+    if (mediaType === 'video' && !videoUrl) {
+      return res.status(400).json({ message: 'يجب إرفاق فيديو عند اختيار نوع "فيديو"' });
+    }
+    if (mediaType === 'both' && (!imageUrl || !videoUrl)) {
+      return res.status(400).json({ message: 'يجب إرفاق صورة وفيديو عند اختيار نوع "صورة وفيديو"' });
+    }
+
+    if (mediaType === 'none') {
+      if (imagePublicId) await deleteFromCloudinary(imagePublicId, 'image');
+      if (videoPublicId) await deleteFromCloudinary(videoPublicId, 'video');
+      imageUrl = '';
+      imagePublicId = '';
+      videoUrl = '';
+      videoPublicId = '';
+      videoThumbnail = '';
+      videoDuration = 0;
+    }
+    if (mediaType === 'image' && videoPublicId) {
+      await deleteFromCloudinary(videoPublicId, 'video');
+      videoUrl = '';
+      videoPublicId = '';
+      videoThumbnail = '';
+      videoDuration = 0;
+    }
+    if (mediaType === 'video' && imagePublicId) {
+      await deleteFromCloudinary(imagePublicId, 'image');
+      imageUrl = '';
+      imagePublicId = '';
+    }
 
     const news = await News.create({
       title,
       content,
       excerpt: excerpt || content.substring(0, 150) + '...',
+      mediaType,
       imageUrl,
+      imagePublicId,
+      videoUrl,
+      videoPublicId,
+      videoThumbnail,
+      videoDuration,
       category: category || 'general',
       isFeatured: isFeatured === 'true' || isFeatured === true,
       isBreaking: isBreaking === 'true' || isBreaking === true,
@@ -311,7 +366,6 @@ const createNews = async (req, res) => {
       author: req.user._id,
     });
 
-    /* ---------- إشعارات + بريد ---------- */
     try {
       const users = await User.find({
         receiveNotifications: true,
@@ -355,26 +409,8 @@ const createNews = async (req, res) => {
   }
 };
 
-/* ============================================================
- *  PUT  /api/news/:id   (admin)
- * ============================================================ */
 const updateNews = async (req, res) => {
   try {
-    console.log('\n========== UPDATE NEWS ==========');
-    console.log('req.file exists:', !!req.file);
-    console.log(
-      'req.file details:',
-      req.file
-        ? {
-            fieldname: req.file.fieldname,
-            originalname: req.file.originalname,
-            mimetype: req.file.mimetype,
-            size: req.file.size,
-            hasBuffer: !!req.file.buffer,
-          }
-        : 'NO FILE'
-    );
-
     const news = await News.findById(req.params.id);
     if (!news) {
       return res.status(404).json({ message: 'الخبر غير موجود' });
@@ -382,31 +418,106 @@ const updateNews = async (req, res) => {
 
     const updatedData = { ...req.body };
 
-    // ✅ إذا وُجد ملف، يجب أن يُرفع بنجاح أو نُرجع خطأ
-    if (req.file) {
-      if (!req.file.buffer || req.file.buffer.length === 0) {
-        return res.status(400).json({ message: 'الملف المرفوع فارغ أو تالف' });
-      }
+    delete updatedData.author;
+    delete updatedData.views;
+    delete updatedData.createdAt;
+    delete updatedData.updatedAt;
+    delete updatedData._id;
 
-      console.log('📤 Uploading new image to Cloudinary...');
+    let mediaType = updatedData.mediaType !== undefined ? updatedData.mediaType : news.mediaType;
+    if (!['none', 'image', 'video', 'both'].includes(mediaType)) {
+      mediaType = news.mediaType;
+    }
+
+    const imageFile = req.files?.image?.[0];
+    const videoFile = req.files?.video?.[0];
+
+    let newImageUrl = news.imageUrl;
+    let newImagePublicId = news.imagePublicId;
+    let newVideoUrl = news.videoUrl;
+    let newVideoPublicId = news.videoPublicId;
+    let newVideoThumbnail = news.videoThumbnail;
+    let newVideoDuration = news.videoDuration;
+
+    if (imageFile) {
       try {
-        const cloudResult = await uploadBufferToCloudinary(
-          req.file.buffer,
-          'telecom-egypt/news',
-          'image'
-        );
-        updatedData.imageUrl = cloudResult.secure_url;
-        console.log('✅ New Cloudinary URL:', updatedData.imageUrl);
-      } catch (cloudErr) {
-        console.error('❌ Cloudinary upload failed:', cloudErr);
+        const imgResult = await uploadImageToCloudinary(imageFile.buffer);
+        if (news.imagePublicId) {
+          await deleteFromCloudinary(news.imagePublicId, 'image');
+        }
+        newImageUrl = imgResult.secure_url;
+        newImagePublicId = imgResult.public_id;
+      } catch (err) {
+        console.error('❌ Image update failed:', err);
         return res.status(500).json({
           message: 'فشل رفع الصورة الجديدة',
-          error: cloudErr.message,
+          error: err.message,
         });
       }
     }
 
-    /* ---------- تحويلات Boolean / Number ---------- */
+    if (videoFile) {
+      try {
+        const vidResult = await uploadVideoToCloudinary(videoFile.buffer);
+        if (news.videoPublicId) {
+          await deleteFromCloudinary(news.videoPublicId, 'video');
+        }
+        newVideoUrl = vidResult.secure_url;
+        newVideoPublicId = vidResult.public_id;
+        newVideoDuration = Math.round(vidResult.duration || 0);
+        newVideoThumbnail = vidResult.secure_url
+          .replace('/video/upload/', '/video/upload/so_auto/')
+          .replace(/\.[^.]+$/, '.jpg');
+      } catch (err) {
+        console.error('❌ Video update failed:', err);
+        return res.status(500).json({
+          message: 'فشل رفع الفيديو الجديد',
+          error: err.message,
+        });
+      }
+    }
+
+    if (mediaType === 'image' && !newImageUrl) {
+      return res.status(400).json({ message: 'يجب إرفاق صورة عند اختيار نوع "صورة"' });
+    }
+    if (mediaType === 'video' && !newVideoUrl) {
+      return res.status(400).json({ message: 'يجب إرفاق فيديو عند اختيار نوع "فيديو"' });
+    }
+    if (mediaType === 'both' && (!newImageUrl || !newVideoUrl)) {
+      return res.status(400).json({ message: 'يجب إرفاق صورة وفيديو عند اختيار نوع "صورة وفيديو"' });
+    }
+
+    if (mediaType === 'none') {
+      if (newImagePublicId) await deleteFromCloudinary(newImagePublicId, 'image');
+      if (newVideoPublicId) await deleteFromCloudinary(newVideoPublicId, 'video');
+      newImageUrl = '';
+      newImagePublicId = '';
+      newVideoUrl = '';
+      newVideoPublicId = '';
+      newVideoThumbnail = '';
+      newVideoDuration = 0;
+    }
+    if (mediaType === 'image' && newVideoPublicId) {
+      await deleteFromCloudinary(newVideoPublicId, 'video');
+      newVideoUrl = '';
+      newVideoPublicId = '';
+      newVideoThumbnail = '';
+      newVideoDuration = 0;
+    }
+    if (mediaType === 'video' && newImagePublicId) {
+      await deleteFromCloudinary(newImagePublicId, 'image');
+      newImageUrl = '';
+      newImagePublicId = '';
+    }
+
+    updatedData.mediaType = mediaType;
+    updatedData.imageUrl = newImageUrl;
+    updatedData.imagePublicId = newImagePublicId;
+    updatedData.videoUrl = newVideoUrl;
+    updatedData.videoPublicId = newVideoPublicId;
+    updatedData.videoThumbnail = newVideoThumbnail;
+    updatedData.videoDuration = newVideoDuration;
+
     if (updatedData.isFeatured !== undefined) {
       updatedData.isFeatured =
         updatedData.isFeatured === 'true' || updatedData.isFeatured === true;
@@ -438,15 +549,15 @@ const updateNews = async (req, res) => {
   }
 };
 
-/* ============================================================
- *  DELETE  /api/news/:id   (admin)
- * ============================================================ */
 const deleteNews = async (req, res) => {
   try {
     const news = await News.findById(req.params.id);
     if (!news) {
       return res.status(404).json({ message: 'الخبر غير موجود' });
     }
+
+    if (news.imagePublicId) await deleteFromCloudinary(news.imagePublicId, 'image');
+    if (news.videoPublicId) await deleteFromCloudinary(news.videoPublicId, 'video');
 
     await news.deleteOne();
     res.json({ message: 'تم حذف الخبر بنجاح' });

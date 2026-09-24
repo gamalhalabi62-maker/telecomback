@@ -1,7 +1,6 @@
 const Player = require('../models/Player');
 const cloudinary = require('../config/cloudinary');
 
-// دالة مساعدة لرفع الـ Buffer إلى Cloudinary
 const uploadBufferToCloudinary = (fileBuffer, folderName = 'telecom-egypt/players') => {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
@@ -106,14 +105,12 @@ const createPlayer = async (req, res) => {
 
     let imageUrl = req.body.imageUrl || '';
 
-    // رفع الصورة إلى Cloudinary إذا وجد ملف مرفوع
     if (req.file && req.file.buffer) {
       try {
         const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
         imageUrl = cloudResult.secure_url;
       } catch (cloudErr) {
         console.error('Cloudinary upload error:', cloudErr);
-        // التراجع لاستخدام Base64 في حال فشل Cloudinary
         const b64 = Buffer.from(req.file.buffer).toString('base64');
         imageUrl = `data:${req.file.mimetype};base64,${b64}`;
       }
