@@ -1,6 +1,6 @@
 const Video = require('../models/Video');
 
-
+// ========== جلب كل الفيديوهات ==========
 const getVideos = async (req, res) => {
   try {
     const { category, search, page = 1, limit = 12, featured } = req.query;
@@ -34,7 +34,7 @@ const getVideos = async (req, res) => {
   }
 };
 
-
+// ========== فيديو واحد ==========
 const getVideoById = async (req, res) => {
   try {
     const video = await Video.findById(req.params.id).populate('author', 'name');
@@ -56,7 +56,7 @@ const getVideoById = async (req, res) => {
   }
 };
 
-
+// ========== الفيديوهات المميزة ==========
 const getFeaturedVideos = async (req, res) => {
   try {
     let videos = await Video.find({ isFeatured: true })
@@ -73,7 +73,7 @@ const getFeaturedVideos = async (req, res) => {
   }
 };
 
-
+// ========== إضافة فيديو ==========
 const createVideo = async (req, res) => {
   try {
     const { title, description, category, duration, isFeatured } = req.body;
@@ -83,9 +83,10 @@ const createVideo = async (req, res) => {
     let videoUrl = '';
     let thumbnailUrl = '';
 
+    // ✅ Cloudinary يُرجع الرابط الكامل في req.files.*.path
     if (req.files) {
-      if (req.files.video) videoUrl = `/uploads/videos/${req.files.video[0].filename}`;
-      if (req.files.thumbnail) thumbnailUrl = `/uploads/thumbnails/${req.files.thumbnail[0].filename}`;
+      if (req.files.video) videoUrl = req.files.video[0].path;
+      if (req.files.thumbnail) thumbnailUrl = req.files.thumbnail[0].path;
     }
 
     if (!videoUrl && req.body.videoUrl) videoUrl = req.body.videoUrl;
@@ -108,7 +109,7 @@ const createVideo = async (req, res) => {
   }
 };
 
-
+// ========== تعديل فيديو ==========
 const updateVideo = async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);
@@ -116,9 +117,10 @@ const updateVideo = async (req, res) => {
 
     const updatedData = { ...req.body };
 
+    // ✅ Cloudinary يُرجع الرابط الكامل
     if (req.files) {
-      if (req.files.video) updatedData.videoUrl = `/uploads/videos/${req.files.video[0].filename}`;
-      if (req.files.thumbnail) updatedData.thumbnailUrl = `/uploads/thumbnails/${req.files.thumbnail[0].filename}`;
+      if (req.files.video) updatedData.videoUrl = req.files.video[0].path;
+      if (req.files.thumbnail) updatedData.thumbnailUrl = req.files.thumbnail[0].path;
     }
 
     if (updatedData.isFeatured !== undefined) {
@@ -136,6 +138,7 @@ const updateVideo = async (req, res) => {
   }
 };
 
+// ========== حذف فيديو ==========
 const deleteVideo = async (req, res) => {
   try {
     const video = await Video.findById(req.params.id);

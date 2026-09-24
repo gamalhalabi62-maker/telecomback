@@ -1,5 +1,6 @@
 const Player = require('../models/Player');
 
+// ========== جلب كل اللاعبين ==========
 const getPlayers = async (req, res) => {
   try {
     const { position, search, active } = req.query;
@@ -7,9 +8,7 @@ const getPlayers = async (req, res) => {
 
     if (position) query.position = position;
     if (active === 'true') query.isActive = true;
-    if (search) {
-      query.name = { $regex: search, $options: 'i' };
-    }
+    if (search) query.name = { $regex: search, $options: 'i' };
 
     const players = await Player.find(query).sort({ order: 1, number: 1 });
     res.json({ players, total: players.length });
@@ -18,7 +17,7 @@ const getPlayers = async (req, res) => {
   }
 };
 
-
+// ========== اللاعبون حسب المراكز ==========
 const getPlayersByPosition = async (req, res) => {
   try {
     const players = await Player.find({ isActive: true }).sort({ order: 1, number: 1 });
@@ -36,7 +35,7 @@ const getPlayersByPosition = async (req, res) => {
   }
 };
 
-
+// ========== إحصائيات الفريق ==========
 const getTeamStats = async (req, res) => {
   try {
     const totalPlayers = await Player.countDocuments({ isActive: true });
@@ -59,7 +58,7 @@ const getTeamStats = async (req, res) => {
   }
 };
 
-
+// ========== لاعب واحد ==========
 const getPlayerById = async (req, res) => {
   try {
     const player = await Player.findById(req.params.id);
@@ -79,7 +78,7 @@ const getPlayerById = async (req, res) => {
   }
 };
 
-
+// ========== إضافة لاعب ==========
 const createPlayer = async (req, res) => {
   try {
     const {
@@ -92,7 +91,8 @@ const createPlayer = async (req, res) => {
       return res.status(400).json({ message: 'الاسم والرقم والمركز مطلوبون' });
     }
 
-    const imageUrl = req.file ? `/uploads/images/${req.file.filename}` : req.body.imageUrl || '';
+    // ✅ Cloudinary يُرجع الرابط الكامل
+    const imageUrl = req.file ? req.file.path : req.body.imageUrl || '';
 
     const playerData = {
       name,
@@ -127,6 +127,7 @@ const createPlayer = async (req, res) => {
   }
 };
 
+// ========== تعديل لاعب ==========
 const updatePlayer = async (req, res) => {
   try {
     const player = await Player.findById(req.params.id);
@@ -134,8 +135,9 @@ const updatePlayer = async (req, res) => {
 
     const updatedData = { ...req.body };
 
+    // ✅ Cloudinary يُرجع الرابط الكامل
     if (req.file) {
-      updatedData.imageUrl = `/uploads/images/${req.file.filename}`;
+      updatedData.imageUrl = req.file.path;
     }
 
     if (updatedData.number !== undefined) updatedData.number = Number(updatedData.number);
@@ -173,7 +175,7 @@ const updatePlayer = async (req, res) => {
   }
 };
 
-
+// ========== حذف لاعب ==========
 const deletePlayer = async (req, res) => {
   try {
     const player = await Player.findById(req.params.id);
