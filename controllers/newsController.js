@@ -2,24 +2,6 @@ const News = require('../models/News');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { sendNotificationEmail } = require('../utils/sendEmail');
-const cloudinary = require('../config/cloudinary');
-
-// دالة مساعدة لرفع الـ Buffer إلى Cloudinary بأمان تام
-const uploadBufferToCloudinary = (fileBuffer) => {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: 'telecom-egypt/news',
-        resource_type: 'auto',
-      },
-      (error, result) => {
-        if (error) return reject(error);
-        resolve(result);
-      }
-    );
-    uploadStream.end(fileBuffer);
-  });
-};
 
 const getNews = async (req, res) => {
   try {
@@ -35,8 +17,8 @@ const getNews = async (req, res) => {
     if (urgent === 'true') query.isUrgent = true;
     if (search) {
       query.$or = [
-        { title: { $regex: search,$options: 'i' } },
-        { content: { $regex: search,$options: 'i' } },
+        { title: { $regex: search, $options: 'i' } },
+        { content: { $regex: search, $options: 'i' } },
       ];
     }
 
@@ -130,7 +112,7 @@ const getStats = async (req, res) => {
       { $group: { _id: null, total: { $sum: '$views' } } },
     ]);
     const categoriesCount = await News.aggregate([
-      { $group: { _id: '$category', count: {$sum: 1 } } },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
     ]);
 
     res.json({
@@ -174,31 +156,18 @@ const createNews = async (req, res) => {
   try {
     const {
       title, content, excerpt, category, isFeatured,
-      isBreaking, isUrgent, priority, tags,
+      isBreaking, isUrgent, priority, tags, imageUrl,
     } = req.body;
 
     if (!title || !content) {
       return res.status(400).json({ message: 'العنوان والمحتوى مطلوبان' });
     }
 
-    let imageUrl = req.body.imageUrl || '';
-
-    // رفع الصورة إلى Cloudinary والحصول على الرابط الحقيقي
-    if (req.file && req.file.buffer) {
-      try {
-        const cloudinaryResult = await uploadBufferToCloudinary(req.file.buffer);
-        imageUrl = cloudinaryResult.secure_url;
-      } catch (cloudErr) {
-        console.error('❌ Cloudinary Upload Error:', cloudErr);
-        return res.status(500).json({ message: 'فشل رفع الصورة إلى السحابة', error: cloudErr.message });
-      }
-    }
-
     const news = await News.create({
       title,
       content,
       excerpt: excerpt || content.substring(0, 150) + '...',
-      imageUrl,
+      imageUrl: imageUrl || '',
       category: category || 'general',
       isFeatured: isFeatured === 'true' || isFeatured === true,
       isBreaking: isBreaking === 'true' || isBreaking === true,
@@ -232,27 +201,23 @@ const createNews = async (req, res) => {
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
         const link = `${frontendUrl}/news/${news._id}`;
 
-        const emailPromises = users.map((user) =>
+        users.forEach((user) => {
           sendNotificationEmail(
             user.email,
             user.name,
             'خبر جديد على موقع نادي المصرية للاتصالات',
             `<p><strong>${title}</strong></p><p>${excerpt || content.substring(0, 200)}...</p>`,
             link
-          ).catch((err) => {
-            console.error(`❌ Email error for ${user.email}:`, err.message);
-            return { success: false, email: user.email };
-          })
-        );
-
-        Promise.allSettled(emailPromises);
+          ).catch((err) => console.error('Email error:', err.message));
+        });
       }
     } catch (notifyErr) {
-      console.error('❌ [Notifications] خطأ:', notifyErr.message);
+      console.error('Notification error:', notifyErr.message);
     }
 
     res.status(201).json(news);
   } catch (error) {
+    console.error('Create news error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
@@ -266,29 +231,23 @@ const updateNews = async (req, res) => {
 
     const updatedData = { ...req.body };
 
-    // رفع صورة جديدة لـ Cloudinary إذا تم إرفاق صورة عند التحديث
-    if (req.file && req.file.buffer) {
-      try {
-        const cloudinaryResult = await uploadBufferToCloudinary(req.file.buffer);
-        updatedData.imageUrl = cloudinaryResult.secure_url;
-      } catch (cloudErr) {
-        console.error('❌ Cloudinary Update Error:', cloudErr);
-        return res.status(500).json({ message: 'فشل رفع الصورة الجديدة', error: cloudErr.message });
-      }
-    }
-
     if (updatedData.isFeatured !== undefined) {
-      updatedData.isFeatured = updatedData.isFeatured === 'true' || updatedData.isFeatured === true;
+      updatedData.isFeatured =
+        updatedData.isFeatured === 'true' || updatedData.isFeatured === true;
     }
     if (updatedData.isBreaking !== undefined) {
-      updatedData.isBreaking = updatedData.isBreaking === 'true' || updatedData.isBreaking === true;
+      updatedData.isBreaking =
+        updatedData.isBreaking === 'true' || updatedData.isBreaking === true;
     }
     if (updatedData.isUrgent !== undefined) {
-      updatedData.isUrgent = updatedData.isUrgent === 'true' || updatedData.isUrgent === true;
+      updatedData.isUrgent =
+        updatedData.isUrgent === 'true' || updatedData.isUrgent === true;
     }
+
     if (updatedData.priority !== undefined) {
       updatedData.priority = Number(updatedData.priority) || 0;
     }
+
     if (updatedData.tags && !Array.isArray(updatedData.tags)) {
       updatedData.tags = updatedData.tags.split(',').map(t => t.trim());
     }
@@ -300,6 +259,7 @@ const updateNews = async (req, res) => {
 
     res.json(updatedNews);
   } catch (error) {
+    console.error('Update news error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };

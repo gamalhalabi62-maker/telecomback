@@ -1,6 +1,5 @@
 const Player = require('../models/Player');
 
-// ========== جلب كل اللاعبين ==========
 const getPlayers = async (req, res) => {
   try {
     const { position, search, active } = req.query;
@@ -17,7 +16,6 @@ const getPlayers = async (req, res) => {
   }
 };
 
-// ========== اللاعبون حسب المراكز ==========
 const getPlayersByPosition = async (req, res) => {
   try {
     const players = await Player.find({ isActive: true }).sort({ order: 1, number: 1 });
@@ -35,7 +33,6 @@ const getPlayersByPosition = async (req, res) => {
   }
 };
 
-// ========== إحصائيات الفريق ==========
 const getTeamStats = async (req, res) => {
   try {
     const totalPlayers = await Player.countDocuments({ isActive: true });
@@ -58,7 +55,6 @@ const getTeamStats = async (req, res) => {
   }
 };
 
-// ========== لاعب واحد ==========
 const getPlayerById = async (req, res) => {
   try {
     const player = await Player.findById(req.params.id);
@@ -78,21 +74,17 @@ const getPlayerById = async (req, res) => {
   }
 };
 
-// ========== إضافة لاعب ==========
 const createPlayer = async (req, res) => {
   try {
     const {
       name, number, position, nationality, birthDate,
       height, weight, bio, isCaptain, isActive, order,
-      stats,
+      stats, imageUrl,
     } = req.body;
 
     if (!name || !number || !position) {
       return res.status(400).json({ message: 'الاسم والرقم والمركز مطلوبون' });
     }
-
-    // ✅ Cloudinary يُرجع الرابط الكامل
-    const imageUrl = req.file ? req.file.path : req.body.imageUrl || '';
 
     const playerData = {
       name,
@@ -103,7 +95,7 @@ const createPlayer = async (req, res) => {
       height: height ? Number(height) : undefined,
       weight: weight ? Number(weight) : undefined,
       bio: bio || '',
-      imageUrl,
+      imageUrl: imageUrl || '',
       isCaptain: isCaptain === 'true' || isCaptain === true,
       isActive: isActive !== 'false' && isActive !== false,
       order: Number(order) || 0,
@@ -123,22 +115,17 @@ const createPlayer = async (req, res) => {
     const player = await Player.create(playerData);
     res.status(201).json(player);
   } catch (error) {
+    console.error('Create player error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
 
-// ========== تعديل لاعب ==========
 const updatePlayer = async (req, res) => {
   try {
     const player = await Player.findById(req.params.id);
     if (!player) return res.status(404).json({ message: 'اللاعب غير موجود' });
 
     const updatedData = { ...req.body };
-
-    // ✅ Cloudinary يُرجع الرابط الكامل
-    if (req.file) {
-      updatedData.imageUrl = req.file.path;
-    }
 
     if (updatedData.number !== undefined) updatedData.number = Number(updatedData.number);
     if (updatedData.height !== undefined && updatedData.height !== '')
@@ -171,11 +158,11 @@ const updatePlayer = async (req, res) => {
 
     res.json(updatedPlayer);
   } catch (error) {
+    console.error('Update player error:', error);
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
 
-// ========== حذف لاعب ==========
 const deletePlayer = async (req, res) => {
   try {
     const player = await Player.findById(req.params.id);
