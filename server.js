@@ -3,9 +3,9 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const morgan = require('morgan');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 const connectDB = require('./config/db');
 
 dotenv.config();
@@ -18,13 +18,17 @@ connectDB();
 const app = express();
 app.set('trust proxy', 1);
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
+/* ============================================================
+ *  CORS
+ * ============================================================ */
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:4173',
+  'http://localhost:5174',
   'https://telecomfront.vercel.app',
   'https://telecomfront-f2owm9e53-jam-b9da.vercel.app',
   process.env.FRONTEND_URL,
@@ -35,11 +39,10 @@ app.use(
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
       if (allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true);
-      } else {
-        console.log('CORS blocked:', origin);
-        callback(null, true);
+        return callback(null, true);
       }
+      console.log('⚠️  CORS not whitelisted (allowed anyway):', origin);
+      return callback(null, true);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -48,6 +51,9 @@ app.use(
   })
 );
 
+/* ============================================================
+ *  LOGGING & SECURITY
+ * ============================================================ */
 app.use(morgan('dev'));
 
 app.use(
@@ -57,18 +63,20 @@ app.use(
   })
 );
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  message: 'تم تجاوز عدد الطلبات المسموح بها، حاول لاحقاً.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api', limiter);
+/* ============================================================
+ *  ⚠️  تم إزالة Rate Limiter نهائياً
+ *  لا يوجد حد على عدد الطلبات
+ * ============================================================ */
 
+/* ============================================================
+ *  STATIC FILES
+ * ============================================================ */
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/uploads', express.static('uploads'));
 
+/* ============================================================
+ *  ROUTES
+ * ============================================================ */
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/news', require('./routes/newsRoutes'));
 app.use('/api/videos', require('./routes/videoRoutes'));
@@ -78,6 +86,12 @@ app.use('/api/statistics', require('./routes/statisticRoutes'));
 app.use('/api/messages', require('./routes/messageRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 
+/* ---------- Test route (Cloudinary) ---------- */
+app.use('/api/test', require('./routes/testRoutes'));
+
+/* ============================================================
+ *  HEALTH & ROOT
+ * ============================================================ */
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
@@ -89,7 +103,7 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => {
   res.json({
     message: 'مرحباً بك في API نادي المصرية للاتصالات',
-    version: '2.0',
+    version: '2.1',
     environment: process.env.NODE_ENV || 'development',
     endpoints: {
       auth: '/api/auth',
@@ -100,12 +114,41 @@ app.get('/', (req, res) => {
       statistics: '/api/statistics',
       messages: '/api/messages',
       notifications: '/api/notifications',
+      test: '/api/test/cloudinary',
     },
   });
 });
 
+/* ============================================================
+ *  ERROR HANDLERS
+ *  (ترتيب صحيح: Multer أولاً، ثم العام)
+ * ============================================================ */
+
+/* ---------- Multer errors ---------- */
 app.use((err, req, res, next) => {
-  console.error('Error:', err.stack);
+  if (err instanceof multer.MulterError) {
+    console.error('❌ Multer Error:', err.code, err.message);
+
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        message: 'حجم الملف كبير جداً (الحد 100 ميجابايت)',
+      });
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({
+        message: `حقل غير متوقع: ${err.field}. تأكد من اسم الحقل (image / video / thumbnail)`,
+      });
+    }
+    return res.status(400).json({
+      message: `خطأ في رفع الملف: ${err.message}`,
+    });
+  }
+  next(err);
+});
+
+/* ---------- General errors ---------- */
+app.use((err, req, res, next) => {
+  console.error('❌ Error:', err.stack || err.message);
 
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(400).json({ message: 'حجم الملف كبير جداً' });
@@ -123,25 +166,28 @@ app.use((err, req, res, next) => {
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 });
-// معالج أخطاء Multer
-app.use((err, req, res, next) => {
-  if (err instanceof require('multer').MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ message: 'حجم الملف كبير جداً (الحد 50 ميجابايت)' });
-    }
-    return res.status(400).json({ message: `خطأ في رفع الملف: ${err.message}` });
-  }
-  next(err);
-});
 
+/* ---------- 404 ---------- */
 app.use((req, res) => {
-  res.status(404).json({ message: 'المسار غير موجود' });
+  res.status(404).json({
+    message: 'المسار غير موجود',
+    path: req.originalUrl,
+  });
 });
 
+/* ============================================================
+ *  START SERVER
+ * ============================================================ */
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`CORS allowed origins: ${allowedOrigins.join(', ')}`);
+  console.log('');
+  console.log('════════════════════════════════════════════');
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔓 Rate limiting: DISABLED`);
+  console.log(`📋 CORS allowed origins:`);
+  allowedOrigins.forEach((o) => console.log(`   • ${o}`));
+  console.log('════════════════════════════════════════════');
+  console.log('');
 });
