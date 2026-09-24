@@ -1,8 +1,63 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+/* ============================================================
+ *  Transporter (يُنشأ مرة واحدة ويعاد استخدامه)
+ * ============================================================ */
+let transporter = null;
 
-const emailTemplate = ({ title, greeting, body, otp, footer, color = '#4A148C' }) => `
+const getTransporter = () => {
+  if (transporter) return transporter;
+
+  const required = ['EMAIL_USER', 'EMAIL_PASS'];
+  const missing = required.filter((k) => !process.env[k]);
+
+  if (missing.length > 0) {
+    console.error('❌ Missing email env vars:', missing.join(', '));
+    console.error('⚠️  Emails will NOT be sent. Add them to .env');
+    return null;
+  }
+
+  transporter = nodemailer.createTransport({
+    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+    port: Number(process.env.EMAIL_PORT) || 587,
+    secure: false, // 587 → STARTTLS (وليس SSL مباشر)
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+    tls: {
+      rejectUnauthorized: false,
+    },
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 30000,
+  });
+
+  // اختبار الاتصال عند الإقلاع
+  transporter
+    .verify()
+    .then(() => console.log('✅ Gmail SMTP ready:', process.env.EMAIL_USER))
+    .catch((err) =>
+      console.error('❌ Gmail SMTP verify failed:', err.message)
+    );
+
+  return transporter;
+};
+
+/* ============================================================
+ *  القالب الموحّد للإيميلات
+ * ============================================================ */
+const emailTemplate = ({
+  title,
+  greeting,
+  body,
+  otp,
+  footer,
+  color = '#4A148C',
+}) => `
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -33,7 +88,9 @@ const emailTemplate = ({ title, greeting, body, otp, footer, color = '#4A148C' }
               <div style="color: #555; font-size: 16px; line-height: 1.8;">
                 ${body}
               </div>
-              ${otp ? `
+              ${
+                otp
+                  ? `
               <div style="background: #F3E5F5; border: 2px dashed ${color}; border-radius: 12px; padding: 25px; margin: 30px 0; text-align: center;">
                 <p style="color: #666; margin: 0 0 10px; font-size: 14px; font-weight: bold;">
                   رمز التحقق الخاص بك
@@ -45,7 +102,9 @@ const emailTemplate = ({ title, greeting, body, otp, footer, color = '#4A148C' }
                   ⏱️ صالح لمدة 10 دقائق فقط
                 </p>
               </div>
-              ` : ''}
+              `
+                  : ''
+              }
               <p style="color: #999; font-size: 13px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
                 ${footer || 'إذا لم تكن أنت من طلب هذا، يمكنك تجاهل الرسالة بأمان.'}
               </p>
@@ -69,75 +128,81 @@ const emailTemplate = ({ title, greeting, body, otp, footer, color = '#4A148C' }
 </html>
 `;
 
+/* ============================================================
+ *  دالة إرسال عامة (تُستخدم داخلياً)
+ * ============================================================ */
+const sendMail = async ({ to, subject, html, replyTo }) => {
+  try {
+    const t = getTransporter();
+    if (!t) {
+      return { success: false, error: 'Email transporter not configured' };
+    }
+
+    const fromName = process.env.EMAIL_FROM_NAME || 'نادي المصرية للاتصالات';
+    const fromEmail = process.env.EMAIL_USER;
+
+    const info = await t.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to,
+      subject,
+      html,
+      replyTo: replyTo || fromEmail,
+    });
+
+    console.log(`✅ Email sent to ${to}: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('❌ Send email error:', error.message);
+    return { success: false, error: error.message };
+  }
+};
+
+/* ============================================================
+ *  OTP Email
+ * ============================================================ */
 const sendOTPEmail = async (to, otp, name = '') => {
-  try {
-    const html = emailTemplate({
-      title: 'رمز التحقق - نادي المصرية للاتصالات',
-      greeting: `مرحباً ${name || 'بك'} 👋`,
-      body: `
-        <p>شكراً لتسجيلك في <strong>نادي المصرية للاتصالات</strong>.</p>
-        <p>لاستكمال عملية التسجيل، يرجى إدخال رمز التحقق التالي:</p>
-      `,
-      otp,
-      footer: 'هذا الرمز صالح لمدة 10 دقائق. إذا لم تكن أنت من طلب التسجيل، يرجى تجاهل هذه الرسالة.',
-    });
+  const html = emailTemplate({
+    title: 'رمز التحقق - نادي المصرية للاتصالات',
+    greeting: `مرحباً ${name || 'بك'} 👋`,
+    body: `
+      <p>شكراً لتسجيلك في <strong>نادي المصرية للاتصالات</strong>.</p>
+      <p>لاستكمال عملية التسجيل، يرجى إدخال رمز التحقق التالي:</p>
+    `,
+    otp,
+    footer:
+      'هذا الرمز صالح لمدة 10 دقائق. إذا لم تكن أنت من طلب التسجيل، يرجى تجاهل هذه الرسالة.',
+  });
 
-    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
-    const fromName = process.env.EMAIL_FROM_NAME || 'نادي المصرية للاتصالات';
-
-    const { data, error } = await resend.emails.send({
-      from: `${fromName} <${fromEmail}>`,
-      to: [to],
-      subject: '🔐 رمز التحقق - نادي المصرية للاتصالات',
-      html,
-    });
-
-    if (error) {
-      console.error('❌ Resend OTP Error:', error.message);
-      return { success: false, error: error.message };
-    }
-
-    console.log(`✅ OTP Email sent to ${to}:`, data.id);
-    return { success: true, messageId: data.id };
-  } catch (error) {
-    console.error('❌ Send OTP Email error:', error.message);
-    return { success: false, error: error.message };
-  }
+  return sendMail({
+    to,
+    subject: '🔐 رمز التحقق - نادي المصرية للاتصالات',
+    html,
+  });
 };
 
+/* ============================================================
+ *  Notification Email
+ * ============================================================ */
 const sendNotificationEmail = async (to, name, title, body, link = '') => {
-  try {
-    const html = emailTemplate({
-      title,
-      greeting: `مرحباً ${name || 'عزيزنا'} 👋`,
-      body: `
-        <p>${body}</p>
-        ${link ? `<p style="margin-top: 20px;"><a href="${link}" style="background: #4A148C; color: #fff; padding: 12px 30px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">اقرأ المزيد</a></p>` : ''}
-      `,
-      footer: 'أنت تتلقى هذا الإيميل لأنك مشترك في نادي المصرية للاتصالات.',
-    });
+  const html = emailTemplate({
+    title,
+    greeting: `مرحباً ${name || 'عزيزنا'} 👋`,
+    body: `
+      <p>${body}</p>
+      ${
+        link
+          ? `<p style="margin-top: 20px;"><a href="${link}" style="background: #4A148C; color: #fff; padding: 12px 30px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">اقرأ المزيد</a></p>`
+          : ''
+      }
+    `,
+    footer: 'أنت تتلقى هذا الإيميل لأنك مشترك في نادي المصرية للاتصالات.',
+  });
 
-    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
-    const fromName = process.env.EMAIL_FROM_NAME || 'نادي المصرية للاتصالات';
-
-    const { data, error } = await resend.emails.send({
-      from: `${fromName} <${fromEmail}>`,
-      to: [to],
-      subject: `🏆 ${title}`,
-      html,
-    });
-
-    if (error) {
-      console.error('❌ Resend Notification Error:', error.message);
-      return { success: false, error: error.message };
-    }
-
-    console.log(`✅ Notification Email sent to ${to}:`, data.id);
-    return { success: true, messageId: data.id };
-  } catch (error) {
-    console.error('❌ Notification Email error:', error.message);
-    return { success: false, error: error.message };
-  }
+  return sendMail({
+    to,
+    subject: `🏆 ${title}`,
+    html,
+  });
 };
 
-module.exports = { sendOTPEmail, sendNotificationEmail };
+module.exports = { sendOTPEmail, sendNotificationEmail, getTransporter };

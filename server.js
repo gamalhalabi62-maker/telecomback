@@ -21,9 +21,6 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
-/* ============================================================
- *  CORS
- * ============================================================ */
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -51,9 +48,7 @@ app.use(
   })
 );
 
-/* ============================================================
- *  LOGGING & SECURITY
- * ============================================================ */
+
 app.use(morgan('dev'));
 
 app.use(
@@ -63,20 +58,11 @@ app.use(
   })
 );
 
-/* ============================================================
- *  ⚠️  تم إزالة Rate Limiter نهائياً
- *  لا يوجد حد على عدد الطلبات
- * ============================================================ */
 
-/* ============================================================
- *  STATIC FILES
- * ============================================================ */
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/uploads', express.static('uploads'));
 
-/* ============================================================
- *  ROUTES
- * ============================================================ */
+
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/news', require('./routes/newsRoutes'));
 app.use('/api/videos', require('./routes/videoRoutes'));
@@ -86,12 +72,9 @@ app.use('/api/statistics', require('./routes/statisticRoutes'));
 app.use('/api/messages', require('./routes/messageRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 
-/* ---------- Test route (Cloudinary) ---------- */
 app.use('/api/test', require('./routes/testRoutes'));
 
-/* ============================================================
- *  HEALTH & ROOT
- * ============================================================ */
+
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
@@ -119,12 +102,7 @@ app.get('/', (req, res) => {
   });
 });
 
-/* ============================================================
- *  ERROR HANDLERS
- *  (ترتيب صحيح: Multer أولاً، ثم العام)
- * ============================================================ */
 
-/* ---------- Multer errors ---------- */
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     console.error('❌ Multer Error:', err.code, err.message);
@@ -146,7 +124,6 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-/* ---------- General errors ---------- */
 app.use((err, req, res, next) => {
   console.error('❌ Error:', err.stack || err.message);
 
@@ -167,7 +144,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-/* ---------- 404 ---------- */
 app.use((req, res) => {
   res.status(404).json({
     message: 'المسار غير موجود',
@@ -175,9 +151,7 @@ app.use((req, res) => {
   });
 });
 
-/* ============================================================
- *  START SERVER
- * ============================================================ */
+
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, '0.0.0.0', () => {
