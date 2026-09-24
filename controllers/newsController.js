@@ -34,8 +34,8 @@ const getNews = async (req, res) => {
     if (urgent === 'true') query.isUrgent = true;
     if (search) {
       query.$or = [
-        { title: { $regex: search,$options: 'i' } },
-        { content: { $regex: search,$options: 'i' } },
+        { title: { $regex: search, $options: 'i' } },
+        { content: { $regex: search, $options: 'i' } },
       ];
     }
 
@@ -129,7 +129,7 @@ const getStats = async (req, res) => {
       { $group: { _id: null, total: { $sum: '$views' } } },
     ]);
     const categoriesCount = await News.aggregate([
-      { $group: { _id: '$category', count: {$sum: 1 } } },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
     ]);
 
     res.json({
@@ -183,14 +183,8 @@ const createNews = async (req, res) => {
     let imageUrl = req.body.imageUrl || '';
 
     if (req.file && req.file.buffer) {
-      try {
-        const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
-        imageUrl = cloudResult.secure_url;
-      } catch (cloudErr) {
-        console.error('Cloudinary upload error:', cloudErr);
-        const b64 = Buffer.from(req.file.buffer).toString('base64');
-        imageUrl = `data:${req.file.mimetype};base64,${b64}`;
-      }
+      const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
+      imageUrl = cloudResult.secure_url;
     }
 
     const news = await News.create({
@@ -262,13 +256,8 @@ const updateNews = async (req, res) => {
     const updatedData = { ...req.body };
 
     if (req.file && req.file.buffer) {
-      try {
-        const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
-        updatedData.imageUrl = cloudResult.secure_url;
-      } catch (cloudErr) {
-        const b64 = Buffer.from(req.file.buffer).toString('base64');
-        updatedData.imageUrl = `data:${req.file.mimetype};base64,${b64}`;
-      }
+      const cloudResult = await uploadBufferToCloudinary(req.file.buffer);
+      updatedData.imageUrl = cloudResult.secure_url;
     }
 
     if (updatedData.isFeatured !== undefined) {

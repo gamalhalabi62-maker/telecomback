@@ -10,6 +10,7 @@ const {
   deletePlayer,
 } = require('../controllers/playerController');
 const { protect, adminOnly } = require('../middleware/authMiddleware');
+const { uploadSingle } = require('../middleware/uploadMiddleware');
 
 router.get('/by-position', getPlayersByPosition);
 router.get('/stats', getTeamStats);
@@ -17,8 +18,8 @@ router.get('/stats', getTeamStats);
 router.get('/', getPlayers);
 router.get('/:id', getPlayerById);
 
-router.post('/', protect, adminOnly, createPlayer);
-router.put('/:id', protect, adminOnly, updatePlayer);
+router.post('/', protect, adminOnly, uploadSingle, createPlayer);
+router.put('/:id', protect, adminOnly, uploadSingle, updatePlayer);
 router.delete('/:id', protect, adminOnly, deletePlayer);
 
 module.exports = router;

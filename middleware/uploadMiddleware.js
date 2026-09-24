@@ -1,24 +1,7 @@
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 
-const uploadDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// استخدام Memory Storage للصور و Disk Storage للفيديوهات لتوفير الذاكرة
 const storage = multer.memoryStorage();
-
-const diskStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  },
-});
 
 const fileFilter = (req, file, cb) => {
   if (file.fieldname === 'image' || file.fieldname === 'thumbnail') {
@@ -42,18 +25,12 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 100 * 1024 * 1024 },
-  fileFilter: fileFilter,
-});
-
-const uploadVideoOnly = multer({
-  storage: diskStorage,
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: fileFilter,
 });
 
 const uploadSingle = upload.single('image');
-const uploadVideoFields = uploadVideoOnly.fields([
+const uploadVideoFields = upload.fields([
   { name: 'video', maxCount: 1 },
   { name: 'thumbnail', maxCount: 1 },
 ]);
