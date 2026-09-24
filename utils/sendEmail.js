@@ -1,16 +1,6 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-    port: Number(process.env.EMAIL_PORT) || 587,
-    secure: false, 
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
-};
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const emailTemplate = ({ title, greeting, body, otp, footer, color = '#4A148C' }) => `
 <!DOCTYPE html>
@@ -25,8 +15,6 @@ const emailTemplate = ({ title, greeting, body, otp, footer, color = '#4A148C' }
     <tr>
       <td align="center">
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); max-width: 600px;">
-          
-          <!-- Header -->
           <tr>
             <td style="background: linear-gradient(135deg, ${color}, #311B92); padding: 40px 30px; text-align: center;">
               <h1 style="color: #ffffff; margin: 0; font-size: 26px; font-weight: 900;">
@@ -37,20 +25,15 @@ const emailTemplate = ({ title, greeting, body, otp, footer, color = '#4A148C' }
               </p>
             </td>
           </tr>
-
-          <!-- Body -->
           <tr>
             <td style="padding: 40px 30px;">
               <h2 style="color: #212121; margin: 0 0 20px; font-size: 22px;">
                 ${greeting}
               </h2>
-              
               <div style="color: #555; font-size: 16px; line-height: 1.8;">
                 ${body}
               </div>
-
               ${otp ? `
-              <!-- OTP Box -->
               <div style="background: #F3E5F5; border: 2px dashed ${color}; border-radius: 12px; padding: 25px; margin: 30px 0; text-align: center;">
                 <p style="color: #666; margin: 0 0 10px; font-size: 14px; font-weight: bold;">
                   رمز التحقق الخاص بك
@@ -63,14 +46,11 @@ const emailTemplate = ({ title, greeting, body, otp, footer, color = '#4A148C' }
                 </p>
               </div>
               ` : ''}
-
               <p style="color: #999; font-size: 13px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee;">
                 ${footer || 'إذا لم تكن أنت من طلب هذا، يمكنك تجاهل الرسالة بأمان.'}
               </p>
             </td>
           </tr>
-
-          <!-- Footer -->
           <tr>
             <td style="background-color: #f9f9f9; padding: 25px 30px; text-align: center; border-top: 1px solid #eee;">
               <p style="color: #666; margin: 0 0 10px; font-size: 14px; font-weight: bold;">
@@ -90,59 +70,70 @@ const emailTemplate = ({ title, greeting, body, otp, footer, color = '#4A148C' }
 `;
 
 const sendOTPEmail = async (to, otp, name = '') => {
-  const transporter = createTransporter();
-
-  const html = emailTemplate({
-    title: 'رمز التحقق - نادي المصرية للاتصالات',
-    greeting: `مرحباً ${name || 'بك'} 👋`,
-    body: `
-      <p>شكراً لتسجيلك في <strong>نادي المصرية للاتصالات</strong>.</p>
-      <p>لاستكمال عملية التسجيل، يرجى إدخال رمز التحقق التالي:</p>
-    `,
-    otp,
-    footer: 'هذا الرمز صالح لمدة 10 دقائق. إذا لم تكن أنت من طلب التسجيل، يرجى تجاهل هذه الرسالة.',
-  });
-
-  const mailOptions = {
-    from: `"${process.env.EMAIL_FROM_NAME || 'نادي المصرية للاتصالات'}" <${process.env.EMAIL_USER}>`,
-    to,
-    subject: '🔐 رمز التحقق - نادي المصرية للاتصالات',
-    html,
-  };
-
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ OTP Email sent to ${to}:`, info.messageId);
-    return { success: true, messageId: info.messageId };
+    const html = emailTemplate({
+      title: 'رمز التحقق - نادي المصرية للاتصالات',
+      greeting: `مرحباً ${name || 'بك'} 👋`,
+      body: `
+        <p>شكراً لتسجيلك في <strong>نادي المصرية للاتصالات</strong>.</p>
+        <p>لاستكمال عملية التسجيل، يرجى إدخال رمز التحقق التالي:</p>
+      `,
+      otp,
+      footer: 'هذا الرمز صالح لمدة 10 دقائق. إذا لم تكن أنت من طلب التسجيل، يرجى تجاهل هذه الرسالة.',
+    });
+
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+    const fromName = process.env.EMAIL_FROM_NAME || 'نادي المصرية للاتصالات';
+
+    const { data, error } = await resend.emails.send({
+      from: `${fromName} <${fromEmail}>`,
+      to: [to],
+      subject: '🔐 رمز التحقق - نادي المصرية للاتصالات',
+      html,
+    });
+
+    if (error) {
+      console.error('❌ Resend OTP Error:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    console.log(`✅ OTP Email sent to ${to}:`, data.id);
+    return { success: true, messageId: data.id };
   } catch (error) {
-    console.error('❌ Email send error:', error.message);
+    console.error('❌ Send OTP Email error:', error.message);
     return { success: false, error: error.message };
   }
 };
 
 const sendNotificationEmail = async (to, name, title, body, link = '') => {
-  const transporter = createTransporter();
-
-  const html = emailTemplate({
-    title,
-    greeting: `مرحباً ${name || 'عزيزنا'} 👋`,
-    body: `
-      <p>${body}</p>
-      ${link ? `<p style="margin-top: 20px;"><a href="${link}" style="background: #4A148C; color: #fff; padding: 12px 30px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">اقرأ المزيد</a></p>` : ''}
-    `,
-    footer: 'أنت تتلقى هذا الإيميل لأنك مشترك في نادي المصرية للاتصالات.',
-  });
-
-  const mailOptions = {
-    from: `"${process.env.EMAIL_FROM_NAME || 'نادي المصرية للاتصالات'}" <${process.env.EMAIL_USER}>`,
-    to,
-    subject: `🏆 ${title}`,
-    html,
-  };
-
   try {
-    await transporter.sendMail(mailOptions);
-    return { success: true };
+    const html = emailTemplate({
+      title,
+      greeting: `مرحباً ${name || 'عزيزنا'} 👋`,
+      body: `
+        <p>${body}</p>
+        ${link ? `<p style="margin-top: 20px;"><a href="${link}" style="background: #4A148C; color: #fff; padding: 12px 30px; border-radius: 8px; text-decoration: none; font-weight: bold; display: inline-block;">اقرأ المزيد</a></p>` : ''}
+      `,
+      footer: 'أنت تتلقى هذا الإيميل لأنك مشترك في نادي المصرية للاتصالات.',
+    });
+
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+    const fromName = process.env.EMAIL_FROM_NAME || 'نادي المصرية للاتصالات';
+
+    const { data, error } = await resend.emails.send({
+      from: `${fromName} <${fromEmail}>`,
+      to: [to],
+      subject: `🏆 ${title}`,
+      html,
+    });
+
+    if (error) {
+      console.error('❌ Resend Notification Error:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    console.log(`✅ Notification Email sent to ${to}:`, data.id);
+    return { success: true, messageId: data.id };
   } catch (error) {
     console.error('❌ Notification Email error:', error.message);
     return { success: false, error: error.message };
