@@ -20,6 +20,8 @@ app.set('trust proxy', 1);
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use('/api/test', require('./routes/testRoutes'));
+
 
 const allowedOrigins = [
   'http://localhost:5173',

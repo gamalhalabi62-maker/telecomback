@@ -153,6 +153,10 @@ const getNewsById = async (req, res) => {
 };
 
 const createNews = async (req, res) => {
+  console.log('=== CLOUDINARY CONFIG CHECK ===');
+console.log('Cloud Name:', process.env.CLOUDINARY_CLOUD_NAME);
+console.log('API Key:', process.env.CLOUDINARY_API_KEY ? 'SET' : 'MISSING');
+console.log('API Secret:', process.env.CLOUDINARY_API_SECRET ? 'SET' : 'MISSING');
   try {
     const {
       title, content, excerpt, category, isFeatured,
