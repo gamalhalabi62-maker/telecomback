@@ -2,21 +2,6 @@ const News = require('../models/News');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
 const { sendNotificationEmail } = require('../utils/sendEmail');
-const cloudinary = require('../config/cloudinary');
-
-// دالة مساعدة لرفع الـ buffer الخاص بالصورة إلى Cloudinary
-const uploadBufferToCloudinary = (fileBuffer) => {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      { folder: 'telecom-egypt/news' },
-      (error, result) => {
-        if (error) return reject(error);
-        resolve(result);
-      }
-    );
-    uploadStream.end(fileBuffer);
-  });
-};
 
 const getNews = async (req, res) => {
   try {
@@ -180,10 +165,10 @@ const createNews = async (req, res) => {
 
     let imageUrl = req.body.imageUrl || '';
 
-    // رفع الصورة إلى Cloudinary من الذاكرة المؤقتة مباشرة إذا وجدت
+    // تحويل الصورة المرفوعة مباشرة إلى Base64 String لتخزينها في قاعدة البيانات
     if (req.file && req.file.buffer) {
-      const cloudinaryResult = await uploadBufferToCloudinary(req.file.buffer);
-      imageUrl = cloudinaryResult.secure_url;
+      const b64 = Buffer.from(req.file.buffer).toString('base64');
+      imageUrl = `data:${req.file.mimetype};base64,${b64}`;
     }
 
     const news = await News.create({
@@ -209,8 +194,6 @@ const createNews = async (req, res) => {
         isActive: true,
       }).select('_id name email');
 
-      console.log(`📢 [Notifications] المستخدمون المستهدفون: ${users.length}`);
-
       if (users.length > 0) {
         const notifications = users.map((user) => ({
           recipient: user._id,
@@ -222,12 +205,9 @@ const createNews = async (req, res) => {
         }));
 
         await Notification.insertMany(notifications);
-        console.log(`✅ [Notifications] تم إنشاء ${notifications.length} إشعار داخلي`);
 
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
         const link = `${frontendUrl}/news/${news._id}`;
-
-        console.log(`📧 [Emails] جاري إرسال الإيميلات...`);
 
         const emailPromises = users.map((user) =>
           sendNotificationEmail(
@@ -242,13 +222,7 @@ const createNews = async (req, res) => {
           })
         );
 
-        Promise.allSettled(emailPromises).then((results) => {
-          const success = results.filter(r => r.status === 'fulfilled' && r.value?.success !== false).length;
-          const failed = results.length - success;
-          console.log(`📧 [Emails] نجح: ${success} | فشل: ${failed}`);
-        });
-      } else {
-        console.log(`ℹ️ [Notifications] لا يوجد مستخدمون للتنبيه`);
+        Promise.allSettled(emailPromises);
       }
     } catch (notifyErr) {
       console.error('❌ [Notifications] خطأ:', notifyErr.message);
@@ -269,10 +243,10 @@ const updateNews = async (req, res) => {
 
     const updatedData = { ...req.body };
 
-    // رفع الصورة الجديدة إلى Cloudinary إذا تم إرفاقها
+    // تحديث الصورة بـ Base64 جديدة إذا تم رفع صورة
     if (req.file && req.file.buffer) {
-      const cloudinaryResult = await uploadBufferToCloudinary(req.file.buffer);
-      updatedData.imageUrl = cloudinaryResult.secure_url;
+      const b64 = Buffer.from(req.file.buffer).toString('base64');
+      updatedData.imageUrl = `data:${req.file.mimetype};base64,${b64}`;
     }
 
     if (updatedData.isFeatured !== undefined) {
