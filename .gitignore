@@ -1,0 +1,38 @@
+cd ~/Desktop/telecom-egypt-backend
+
+cat > .gitignore << 'EOF'
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Uploads (الملفات المرفوعة)
+uploads/*
+!uploads/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Vite / Build (إن وُجد)
+dist/
+build/
+EOF
+
+echo "✅ تم تحديث .gitignore"
+cat .gitignore
