@@ -38,16 +38,16 @@ app.use(
       if (allowedOrigins.indexOf(origin) !== -1) {
         callback(null, true);
       } else {
-        console.log('❌ CORS blocked:', origin);
-        callback(new Error('Not allowed by CORS'));
+        console.log('CORS blocked:', origin);
+        callback(null, true);
       }
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    optionsSuccessStatus: 200,
   })
 );
-
 
 app.use(morgan('dev'));
 
@@ -106,7 +106,7 @@ app.get('/', (req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  console.error('❌ Error:', err.stack);
+  console.error('Error:', err.stack);
 
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(400).json({ message: 'حجم الملف كبير جداً' });
@@ -132,7 +132,7 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`✅ CORS allowed origins: ${allowedOrigins.join(', ')}`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`CORS allowed origins: ${allowedOrigins.join(', ')}`);
 });
