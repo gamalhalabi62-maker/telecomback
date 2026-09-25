@@ -10,16 +10,37 @@ const {
   FilgoalStanding,
   FilgoalMatch,
   FilgoalNews,
+  FilgoalTeam,
+  FilgoalScorer,
   FilgoalSyncLog,
 } = require('../models/FilgoalData');
 
-const FILGOAL_URL = 'https://www.filgoal.com/championships/1576/';
-const OUR_TEAM_KEYWORDS = ['الاتصالات', 'المصرية للاتصالات', 'telecom'];
+// ============================================
+// Constants
+// ============================================
+const BASE_URL = 'https://www.filgoal.com';
+const FILGOAL_URL = `${BASE_URL}/championships/1668/`;
+const STANDINGS_URL = `${BASE_URL}/championships/1668/standings/دوري-المحترفين-المصري`;
+const SCORERS_URL = `${BASE_URL}/championships/1668/scorers/دوري-المحترفين-المصري`;
 
+const CHAMPIONSHIP_NAME = 'دوري المحترفين المصري';
+const CHAMPIONSHIP_ID = 1668;
+const OUR_TEAM_KEYWORDS = ['الاتصالات', 'المصرية للاتصالات', 'telecom', 'we'];
+
+// ============================================
+// Helpers
+// ============================================
 const isOurTeam = (name) => {
   if (!name) return false;
   const lower = name.toLowerCase();
   return OUR_TEAM_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()));
+};
+
+const normalizeUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('//')) return `https:${url}`;
+  if (url.startsWith('http')) return url;
+  return `${BASE_URL}${url}`;
 };
 
 const detectStatus = (statusText, homeScore, awayScore, matchDate) => {
@@ -40,224 +61,365 @@ const detectStatus = (statusText, homeScore, awayScore, matchDate) => {
     const now = Date.now();
     const diffHours = (now - matchTime) / (1000 * 60 * 60);
 
-    if (matchTime > now) {
-      return 'upcoming';
-    }
-
-    if (diffHours >= 0 && diffHours < 3 && homeScore === null) {
-      return 'live';
-    }
-
-    if (diffHours >= 3) {
-      return 'finished';
-    }
+    if (matchTime > now) return 'upcoming';
+    if (diffHours >= 0 && diffHours < 3 && homeScore === null) return 'live';
+    if (diffHours >= 3) return 'finished';
   }
 
-  if (homeScore !== null && awayScore !== null) {
-    return 'finished';
-  }
-
+  if (homeScore !== null && awayScore !== null) return 'finished';
   return 'upcoming';
 };
 
-const extractStandings = ($) => {
-  const tables = [];
+const getPageType = (url) => {
+  const decoded = decodeURIComponent(url);
+  if (decoded.includes('/standings/')) return 'standings';
+  if (decoded.includes('/scorers/')) return 'scorers';
+  if (decoded.includes('/matches/')) return 'matches';
+  if (decoded.match(/\/championships\/1668\/?$/)) return 'overview';
+  return 'unknown';
+};
 
-  // 1. جمع كل الجداول مع عناوينها وفرقها
+// ============================================
+// 1. Extract Standings (الترتيب الكامل)
+// ============================================
+const extractStandings = ($, log = console) => {
+  const results = [];
+  const seen = new Set();
+
   $('.fg_tbl').each((tableIdx, table) => {
     const $table = $(table);
+
+    if ($table.hasClass('hidden')) return;
+    if ($table.closest('.hidden').length > 0) return;
+
     const teams = $table.find('.fg_rw.active');
     if (teams.length === 0) return;
 
-    // استخرج اسم المجموعة من h3 الأقرب
-    let groupTitle = '';
-    let $prev = $table;
-    for (let i = 0; i < 15; i++) {
-      $prev = $prev.prev();
-      if (!$prev.length) break;
-
-      if ($prev.is('h3')) {
-        groupTitle = $prev.text().trim();
-        break;
-      }
-
-      const $h3 = $prev.find('h3').first();
-      if ($h3.length && !$prev.is('.mc-block')) {
-        groupTitle = $h3.text().trim();
-        break;
-      }
+    let groupTitle = CHAMPIONSHIP_NAME;
+    const $parentBlock = $table.closest('.mc-block');
+    if ($parentBlock.length) {
+      const titleText = $parentBlock.find('h6 span').first().text().trim();
+      if (titleText) groupTitle = titleText;
     }
-
-    if (!groupTitle) {
-      groupTitle = `المجموعة ${tableIdx + 1}`;
-    }
-
     groupTitle = groupTitle.replace(/\s+/g, ' ').trim();
 
-    // استخرج أسماء الفرق
-    const teamNames = [];
-    teams.each((rowIdx, row) => {
-      const cells = $(row).find('.fg_cl');
-      if (cells.length < 11) return;
-      const teamName = $(cells[1]).text().trim().replace(/\s+/g, ' ');
-      if (teamName) teamNames.push(teamName);
-    });
+    log.info(`📋 Table ${tableIdx + 1}: "${groupTitle}" (${teams.length} teams)`);
 
-    // اجمع كل الفرق في جدول واحد
-    const standings = [];
     teams.each((rowIdx, row) => {
-      const cells = $(row).find('.fg_cl');
+      const $row = $(row);
+      const cells = $row.find('.fg_cl');
+
       if (cells.length < 11) return;
 
       const rank = parseInt($(cells[0]).text().trim(), 10);
-      const teamName = $(cells[1]).text().trim().replace(/\s+/g, ' ');
-      const played = parseInt($(cells[2]).text().trim(), 10);
-      const won = parseInt($(cells[5]).text().trim(), 10);
-      const lost = parseInt($(cells[6]).text().trim(), 10);
-      const drawn = parseInt($(cells[7]).text().trim(), 10);
-      const goalsFor = parseInt($(cells[8]).text().trim(), 10);
-      const goalsAgainst = parseInt($(cells[9]).text().trim(), 10);
-      const points = parseInt($(cells[10]).text().trim(), 10);
+
+      const teamLink = $(cells[1]).find('a').first();
+      const teamName = teamLink.text().trim().replace(/\s+/g, ' ');
+      const teamUrl = teamLink.attr('href') || '';
+      const teamIdMatch = teamUrl.match(/\/Teams\/(\d+)/i);
+      const filgoalTeamId = teamIdMatch ? parseInt(teamIdMatch[1], 10) : null;
+      const teamLogo = $(cells[1]).find('img').attr('data-src') ||
+                       $(cells[1]).find('img').attr('src') || '';
+
+      const played = parseInt($(cells[2]).text().trim(), 10) || 0;
+      const homePlayed = parseInt($(cells[3]).text().trim(), 10) || 0;
+      const awayPlayed = parseInt($(cells[4]).text().trim(), 10) || 0;
+      const won = parseInt($(cells[5]).text().trim(), 10) || 0;
+      const lost = parseInt($(cells[6]).text().trim(), 10) || 0;
+      const drawn = parseInt($(cells[7]).text().trim(), 10) || 0;
+      const goalsFor = parseInt($(cells[8]).text().trim(), 10) || 0;
+      const goalsAgainst = parseInt($(cells[9]).text().trim(), 10) || 0;
+      const points = parseInt($(cells[10]).text().trim(), 10) || 0;
+
+      let yellowCards = 0;
+      let redCards = 0;
+      const $details = $row.find('.fg_cl.dtls');
+      if ($details.length) {
+        const detailsText = $details.text();
+        const ycMatch = detailsText.match(/بطاقات صفراء\s*:\s*(\d+)/);
+        const rcMatch = detailsText.match(/بطاقات حمراء\s*:\s*(\d+)/);
+        if (ycMatch) yellowCards = parseInt(ycMatch[1], 10);
+        if (rcMatch) redCards = parseInt(rcMatch[1], 10);
+      }
+
+      const uniqueKey = `${groupTitle}|${teamName}`;
+      if (seen.has(uniqueKey)) return;
+      seen.add(uniqueKey);
 
       if (teamName && !isNaN(rank)) {
-        standings.push({
+        results.push({
           group: groupTitle,
           rank,
           teamName,
-          played: played || 0,
-          won: won || 0,
-          drawn: drawn || 0,
-          lost: lost || 0,
-          goalsFor: goalsFor || 0,
-          goalsAgainst: goalsAgainst || 0,
-          goalDifference: (goalsFor || 0) - (goalsAgainst || 0),
-          points: points || 0,
+          filgoalTeamId,
+          teamLogo: normalizeUrl(teamLogo),
+          teamUrl: normalizeUrl(teamUrl),
+          played,
+          homePlayed,
+          awayPlayed,
+          won,
+          drawn,
+          lost,
+          goalsFor,
+          goalsAgainst,
+          goalDifference: goalsFor - goalsAgainst,
+          points,
+          yellowCards,
+          redCards,
           isOurTeam: isOurTeam(teamName),
           syncedAt: new Date(),
         });
       }
     });
-
-    tables.push({
-      tableIdx,
-      groupTitle,
-      teamCount: teams.length,
-      teamNames,
-      standings,
-    });
   });
-
-  // 2. احذف الجداول المتطابقة (نفس أسماء الفرق)
-  const uniqueTables = [];
-  const seenSignatures = new Set();
-
-  for (const table of tables) {
-    // أنشئ signature من أسماء الفرق مرتبة
-    const signature = [...table.teamNames].sort().join('|');
-
-    if (seenSignatures.has(signature)) {
-      console.log(`⏭️ Skipping duplicate: "${table.groupTitle}" (${table.teamCount} teams)`);
-      continue;
-    }
-
-    seenSignatures.add(signature);
-
-    // استبعد أي جدول يحتوي على نفس فرق جدول آخر
-    // (كشف الجدول الكلي من 29 فريق)
-    const isSuperset = uniqueTables.some((t) => {
-      if (t.teamCount >= table.teamCount) return false;
-      // هل كل فرق الجدول الصغير موجودة في الجدول الكبير؟
-      const smallSet = new Set(t.teamNames);
-      const allInBig = t.teamNames.every((n) => table.teamNames.includes(n));
-      return allInBig;
-    });
-
-    if (isSuperset) {
-      console.log(`⏭️ Skipping superset: "${table.groupTitle}" (${table.teamCount} teams)`);
-      continue;
-    }
-
-    console.log(`📋 Keeping: "${table.groupTitle}" (${table.teamCount} teams)`);
-    uniqueTables.push(table);
-  }
-
-  // 3. إذا كان الجدول الصغير جزء من الكبير، احذف الكبير
-  const finalTables = uniqueTables.filter((table) => {
-    // هل هناك جدول أصغر منه يحتوي على مجموعة فرعية من فرقه؟
-    return !uniqueTables.some((smaller) => {
-      if (smaller.teamCount >= table.teamCount) return false;
-      // هل كل فرق الجدول الأصغر موجودة في الجدول الأكبر؟
-      const allInBig = smaller.teamNames.every((n) => table.teamNames.includes(n));
-      return allInBig;
-    });
-  });
-
-  // 4. دمج كل الفرق
-  const results = [];
-  const seen = new Set();
-
-  for (const table of finalTables) {
-    console.log(`✅ Using: "${table.groupTitle}" (${table.teamCount} teams)`);
-    for (const row of table.standings) {
-      const uniqueKey = `${row.group}|${row.teamName}`;
-      if (seen.has(uniqueKey)) continue;
-      seen.add(uniqueKey);
-      results.push(row);
-    }
-  }
 
   return results;
 };
 
-const extractMatches = ($) => {
+// ============================================
+// 2. Extract Teams
+// ============================================
+const extractTeams = ($, log = console) => {
+  const teams = [];
+  const seen = new Set();
+
+  $('.fg_team_slider li a').each((i, el) => {
+    const $el = $(el);
+    const href = $el.attr('href') || '';
+    const teamName = $el.find('b').text().trim();
+    const logo = $el.find('img').attr('data-src') || $el.find('img').attr('src') || '';
+
+    const idMatch = href.match(/\/teams\/(\d+)/i);
+    const filgoalTeamId = idMatch ? parseInt(idMatch[1], 10) : null;
+
+    if (teamName && filgoalTeamId && !seen.has(filgoalTeamId)) {
+      seen.add(filgoalTeamId);
+      teams.push({
+        filgoalTeamId,
+        teamName,
+        teamLogo: normalizeUrl(logo),
+        teamUrl: normalizeUrl(href),
+        championshipId: CHAMPIONSHIP_ID,
+        isOurTeam: isOurTeam(teamName),
+        syncedAt: new Date(),
+      });
+    }
+  });
+
+  log.info(`👥 Teams extracted: ${teams.length}`);
+  return teams;
+};
+
+// ============================================
+// 3. Extract Scorers (محسّن - multiple selectors)
+// ============================================
+const extractScorers = ($, log = console) => {
+  const scorers = [];
+  const seen = new Set();
+
+  const selectors = [
+    '.boxlist li',
+    '.scorers-list li',
+    '.mc-block .boxlist li',
+    '[class*="scorer"] li',
+  ];
+
+  for (const selector of selectors) {
+    const items = $(selector);
+    if (items.length === 0) continue;
+
+    items.each((i, item) => {
+      try {
+        const $item = $(item);
+        const links = $item.find('.f a, .player a');
+
+        let playerName = '';
+        let playerUrl = '';
+        let teamName = '';
+        let teamUrl = '';
+        let goals = 0;
+
+        if (links.length >= 3) {
+          playerName = links.eq(1).text().trim();
+          playerUrl = links.eq(1).attr('href') || '';
+          teamName = links.eq(2).text().trim();
+          teamUrl = links.eq(2).attr('href') || '';
+        }
+
+        if (!playerName) {
+          playerName = $item.find('h6, strong, .player-name').first().text().trim();
+        }
+        if (!teamName) {
+          teamName = $item.find('.team-name, .team').first().text().trim();
+        }
+
+        const goalsText = $item.find('.s b, .goals, [class*="goal"]').first().text().trim();
+        goals = parseInt(goalsText, 10) || 0;
+
+        const playerIdMatch = playerUrl.match(/\/players\/(\d+)/i);
+        const filgoalPlayerId = playerIdMatch ? parseInt(playerIdMatch[1], 10) : null;
+
+        const teamIdMatch = teamUrl.match(/\/teams\/(\d+)/i);
+        const teamId = teamIdMatch ? parseInt(teamIdMatch[1], 10) : null;
+
+        const uniqueKey = `${playerName}|${teamName}`;
+        if (playerName && !seen.has(uniqueKey)) {
+          seen.add(uniqueKey);
+          scorers.push({
+            filgoalPlayerId,
+            playerName,
+            teamName,
+            teamId,
+            goals,
+            playerUrl: normalizeUrl(playerUrl),
+            championshipId: CHAMPIONSHIP_ID,
+            syncedAt: new Date(),
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
+    });
+  }
+
+  log.info(`⚽ Scorers extracted: ${scorers.length}`);
+  return scorers;
+};
+
+// ============================================
+// 4. Extract Matches from sportsEngineData (بدون فلترة)
+// ============================================
+const extractMatchesFromSportsEngine = ($, log = console) => {
   const matches = [];
+  const seen = new Set();
   const scripts = $('script').toArray();
 
   for (const script of scripts) {
     const content = $(script).html() || '';
-    if (!content.includes('viewModelData')) continue;
 
-    const match = content.match(/viewModelData\s*=\s*(\[[\s\S]*?\]);/);
+    if (!content.includes('sportsEngineData')) continue;
+    if (!content.includes('todayMatches')) continue;
+
+    const match = content.match(/sportsEngineData\.todayMatches\s*=\s*(\[[\s\S]*?\]);/);
     if (!match) continue;
 
     try {
       const parsed = JSON.parse(match[1]);
-      parsed.forEach((day) => {
-        (day.Matches || []).forEach((m) => {
-          const statusText = m.CurrentMatchStatus?.MatchStatusName || '';
-          const matchDate = new Date(m.Date);
+      log.info(`📊 sportsEngineData.todayMatches: ${parsed.length} matches total`);
 
-          matches.push({
-            filgoalMatchId: m.Id,
-            homeTeam: (m.HomeTeamName || '').trim(),
-            awayTeam: (m.AwayTeamName || '').trim(),
-            homeTeamLogo: m.HomeTeamLogoUrl || '',
-            awayTeamLogo: m.AwayTeamLogoUrl || '',
-            homeScore: m.HomeScore ?? null,
-            awayScore: m.AwayScore ?? null,
-            date: matchDate,
-            championship: m.ChampionshipName || '',
-            championshipId: m.ChampionshipId || null,
-            round: m.WeekOrRound || '',
-            status: detectStatus(statusText, m.HomeScore, m.AwayScore, matchDate),
-            matchStatusText: statusText,
-            filgoalUrl: m.Slug
-              ? `https://www.filgoal.com/matches/${m.Id}/${m.Slug}`
-              : '',
-            isOurTeam: isOurTeam(m.HomeTeamName) || isOurTeam(m.AwayTeamName),
-            syncedAt: new Date(),
-          });
+      parsed.forEach((m) => {
+        if (!m || !m.Id) return;
+        if (seen.has(m.Id)) return;
+        // ✅ لا فلترة - خذ كل المباريات
+
+        seen.add(m.Id);
+
+        const statusText = m.CurrentMatchStatus?.MatchStatusName || '';
+        const matchDate = new Date(m.Date);
+
+        matches.push({
+          filgoalMatchId: m.Id,
+          homeTeam: (m.HomeTeamName || '').trim(),
+          awayTeam: (m.AwayTeamName || '').trim(),
+          homeTeamId: m.HomeTeamId || null,
+          awayTeamId: m.AwayTeamId || null,
+          homeTeamLogo: normalizeUrl(m.HomeTeamLogoUrl || ''),
+          awayTeamLogo: normalizeUrl(m.AwayTeamLogoUrl || ''),
+          homeScore: m.HomeScore ?? null,
+          awayScore: m.AwayScore ?? null,
+          date: matchDate,
+          championship: m.ChampionshipName || '',
+          championshipId: m.ChampionshipId || null,
+          week: m.Week || null,
+          round: m.WeekOrRound || '',
+          status: detectStatus(statusText, m.HomeScore, m.AwayScore, matchDate),
+          matchStatusText: statusText,
+          filgoalUrl: `${BASE_URL}/matches/${m.Id}`,
+          isOurTeam: isOurTeam(m.HomeTeamName) || isOurTeam(m.AwayTeamName),
+          syncedAt: new Date(),
         });
       });
     } catch (e) {
-      console.error('⚠️ Failed to parse viewModelData:', e.message);
+      log.warning(`⚠️ Failed to parse sportsEngineData: ${e.message}`);
     }
-    break;
   }
 
   return matches;
 };
 
+// ============================================
+// 5. Extract Matches from HTML
+// ============================================
+const extractMatchesFromHtml = ($, log = console) => {
+  const matches = [];
+  const seen = new Set();
+
+  $('.mc-block').each((blockIdx, block) => {
+    const $block = $(block);
+    const title = $block.find('h6 span').first().text().trim();
+
+    if (!title.includes('مواعيد') && !title.includes('نتائج')) return;
+
+    $block.find('.cin_cntnr').each((i, container) => {
+      const $container = $(container);
+      const link = $container.find('a').first().attr('href') || '';
+
+      const idMatch = link.match(/\/matches\/(\d+)/i);
+      if (!idMatch) return;
+
+      const matchId = parseInt(idMatch[1], 10);
+      if (seen.has(matchId)) return;
+      seen.add(matchId);
+
+      const homeTeam = $container.find('.f strong').first().text().trim();
+      const awayTeam = $container.find('.s strong').first().text().trim();
+      const homeScoreText = $container.find('.f b').first().text().trim();
+      const awayScoreText = $container.find('.s b').first().text().trim();
+
+      const homeScore = homeScoreText === '-' ? null : parseInt(homeScoreText, 10);
+      const awayScore = awayScoreText === '-' ? null : parseInt(awayScoreText, 10);
+
+      const statusText = $container.find('.status').first().text().trim();
+      const dateText = $container.find('.match-aux span').last().text().trim();
+
+      let matchDate = new Date();
+      const dateMatch = dateText.match(/(\d{2})-(\d{2})-(\d{4})\s*-\s*(\d{2}):(\d{2})/);
+      if (dateMatch) {
+        const [, day, month, year, hour, minute] = dateMatch;
+        matchDate = new Date(`${year}-${month}-${day}T${hour}:${minute}:00`);
+      }
+
+      matches.push({
+        filgoalMatchId: matchId,
+        homeTeam,
+        awayTeam,
+        homeTeamId: null,
+        awayTeamId: null,
+        homeTeamLogo: normalizeUrl($container.find('.f img').attr('data-src') || ''),
+        awayTeamLogo: normalizeUrl($container.find('.s img').attr('data-src') || ''),
+        homeScore: isNaN(homeScore) ? null : homeScore,
+        awayScore: isNaN(awayScore) ? null : awayScore,
+        date: matchDate,
+        championship: CHAMPIONSHIP_NAME,
+        championshipId: CHAMPIONSHIP_ID,
+        week: null,
+        round: '',
+        status: detectStatus(statusText, homeScore, awayScore, matchDate),
+        matchStatusText: statusText,
+        filgoalUrl: `${BASE_URL}/matches/${matchId}`,
+        isOurTeam: isOurTeam(homeTeam) || isOurTeam(awayTeam),
+        syncedAt: new Date(),
+      });
+    });
+  });
+
+  log.info(`📅 Matches from HTML: ${matches.length}`);
+  return matches;
+};
+
+// ============================================
+// 6. Extract News
+// ============================================
 const extractNews = ($) => {
   const news = [];
   const seen = new Set();
@@ -265,11 +427,10 @@ const extractNews = ($) => {
   $('.mcitem').each((i, item) => {
     try {
       const linkEl = $(item).find('.body a').first();
-      const titleEl = $(item).find('.body a').first();
       const imgEl = $(item).find('.img img').first();
 
       const url = linkEl.attr('href') || '';
-      const title = titleEl.text().trim().replace(/\s+/g, ' ');
+      const title = linkEl.text().trim().replace(/\s+/g, ' ');
       const imageUrl = imgEl.attr('data-src') || imgEl.attr('src') || '';
 
       if (!title || !url) return;
@@ -282,10 +443,10 @@ const extractNews = ($) => {
         news.push({
           filgoalArticleId: articleId,
           title,
-          imageUrl: imageUrl.startsWith('//') ? `https:${imageUrl}` : imageUrl,
-          url: url.startsWith('http') ? url : `https://www.filgoal.com${url}`,
+          imageUrl: normalizeUrl(imageUrl),
+          url: normalizeUrl(url),
           publishedAt: new Date(),
-          category: 'second-division',
+          category: 'professional-league',
           syncedAt: new Date(),
         });
       }
@@ -297,11 +458,108 @@ const extractNews = ($) => {
   return news;
 };
 
+// ============================================
+// 7. Save Functions
+// ============================================
+const saveStandings = async (standings) => {
+  if (standings.length === 0) return 0;
+  await FilgoalStanding.deleteMany({});
+  await FilgoalStanding.insertMany(standings);
+  return standings.length;
+};
+
+const saveTeams = async (teams) => {
+  if (teams.length === 0) return 0;
+  const ops = teams.map((t) => ({
+    updateOne: {
+      filter: { filgoalTeamId: t.filgoalTeamId },
+      update: { $set: t },
+      upsert: true,
+    },
+  }));
+  await FilgoalTeam.bulkWrite(ops);
+  return teams.length;
+};
+
+const saveMatches = async (matches) => {
+  if (matches.length === 0) return 0;
+  const ops = matches.map((m) => ({
+    updateOne: {
+      filter: { filgoalMatchId: m.filgoalMatchId },
+      update: { $set: m },
+      upsert: true,
+    },
+  }));
+  await FilgoalMatch.bulkWrite(ops);
+  return matches.length;
+};
+
+const saveNews = async (news) => {
+  if (news.length === 0) return 0;
+  const ops = news.map((n) => ({
+    updateOne: {
+      filter: { filgoalArticleId: n.filgoalArticleId },
+      update: { $set: n },
+      upsert: true,
+    },
+  }));
+  await FilgoalNews.bulkWrite(ops);
+  return news.length;
+};
+
+const saveScorers = async (scorers) => {
+  if (scorers.length === 0) return 0;
+  const ops = scorers.map((s) => ({
+    updateOne: {
+      filter: { playerName: s.playerName, teamName: s.teamName },
+      update: { $set: s },
+      upsert: true,
+    },
+  }));
+  await FilgoalScorer.bulkWrite(ops);
+  return scorers.length;
+};
+
+// ============================================
+// 8. Merge Matches (deduplicate)
+// ============================================
+const mergeMatches = (...matchArrays) => {
+  const map = new Map();
+  matchArrays.flat().forEach((m) => {
+    if (!m || !m.filgoalMatchId) return;
+    const existing = map.get(m.filgoalMatchId);
+    if (!existing) {
+      map.set(m.filgoalMatchId, m);
+    } else {
+      const merged = { ...existing };
+      Object.keys(m).forEach((key) => {
+        if (m[key] !== null && m[key] !== undefined && m[key] !== '' && m[key] !== 0) {
+          if (!merged[key] || merged[key] === null || merged[key] === '' || merged[key] === 0) {
+            merged[key] = m[key];
+          }
+        }
+      });
+      map.set(m.filgoalMatchId, merged);
+    }
+  });
+  return Array.from(map.values());
+};
+
+// ============================================
+// 9. Main Scraper
+// ============================================
 const runScraper = async () => {
   const startTime = Date.now();
-  let standingsCount = 0;
-  let matchesCount = 0;
-  let newsCount = 0;
+  const stats = {
+    standingsCount: 0,
+    matchesCount: 0,
+    newsCount: 0,
+    teamsCount: 0,
+    scorersCount: 0,
+  };
+
+  // ✅ اجمع كل المباريات من كل الصفحات هنا
+  const allMatchesMap = new Map();
 
   const crawler = new PlaywrightCrawler({
     launchContext: {
@@ -315,8 +573,8 @@ const runScraper = async () => {
         ],
       },
     },
-    maxRequestsPerCrawl: 1,
-    requestHandlerTimeoutSecs: 180,
+    maxRequestsPerCrawl: 3,
+    requestHandlerTimeoutSecs: 300,
     navigationTimeoutSecs: 120,
     maxRequestRetries: 2,
 
@@ -332,67 +590,71 @@ const runScraper = async () => {
     ],
 
     async requestHandler({ page, request, log }) {
-      log.info(`🌐 Fetching ${request.url}...`);
+      const pageType = getPageType(request.url);
+      log.info(`🌐 [${pageType}] Fetching ${request.url}...`);
 
       await page.waitForLoadState('domcontentloaded', { timeout: 60000 });
 
-      await page.evaluate(() => {
-        window.scrollTo(0, document.body.scrollHeight / 2);
-      });
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
       await page.waitForTimeout(2000);
-
-      await page.evaluate(() => {
-        window.scrollTo(0, document.body.scrollHeight);
-      });
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
       await page.waitForTimeout(2000);
-
       await page.evaluate(() => window.scrollTo(0, 0));
       await page.waitForTimeout(1000);
 
       const html = await page.content();
       const $ = cheerio.load(html);
 
-      log.info(`📄 HTML length: ${html.length} chars`);
+      log.info(`📄 [${pageType}] HTML length: ${html.length} chars`);
 
-      const standings = extractStandings($);
-      const matches = extractMatches($);
+      // استخراج البيانات
+      const teams = extractTeams($, log);
+      const matchesFromEngine = extractMatchesFromSportsEngine($, log);
+      const matchesFromHtml = extractMatchesFromHtml($, log);
+      const matches = mergeMatches(matchesFromEngine, matchesFromHtml);
+      const standings = extractStandings($, log);
       const news = extractNews($);
+      const scorers = extractScorers($, log);
 
-      log.info(`📊 Standings: ${standings.length}`);
-      log.info(`⚽ Matches: ${matches.length}`);
-      log.info(`📰 News: ${news.length}`);
+      log.info(`📊 [${pageType}] Standings: ${standings.length}`);
+      log.info(`⚽ [${pageType}] Matches: ${matches.length}`);
+      log.info(`📰 [${pageType}] News: ${news.length}`);
+      log.info(`👥 [${pageType}] Teams: ${teams.length}`);
+      log.info(`🎯 [${pageType}] Scorers: ${scorers.length}`);
 
-      if (standings.length > 0) {
-        await FilgoalStanding.deleteMany({});
-        await FilgoalStanding.insertMany(standings);
-        standingsCount = standings.length;
-        log.info(`✅ Saved ${standings.length} standings`);
+      // ✅ اجمع المباريات من كل الصفحات (بدون تكرار)
+      matches.forEach((m) => {
+        if (!allMatchesMap.has(m.filgoalMatchId)) {
+          allMatchesMap.set(m.filgoalMatchId, m);
+        } else {
+          // ادمج البيانات
+          const existing = allMatchesMap.get(m.filgoalMatchId);
+          Object.keys(m).forEach((key) => {
+            if (m[key] !== null && m[key] !== undefined && m[key] !== '' && m[key] !== 0) {
+              if (!existing[key] || existing[key] === null || existing[key] === '' || existing[key] === 0) {
+                existing[key] = m[key];
+              }
+            }
+          });
+        }
+      });
+
+      // الحفظ حسب نوع الصفحة
+      if (pageType === 'standings' && standings.length > 0) {
+        stats.standingsCount = await saveStandings(standings);
+        log.info(`✅ [standings] Saved ${stats.standingsCount} standings`);
       }
 
-      if (matches.length > 0) {
-        const ops = matches.map((m) => ({
-          updateOne: {
-            filter: { filgoalMatchId: m.filgoalMatchId },
-            update: { $set: m },
-            upsert: true,
-          },
-        }));
-        await FilgoalMatch.bulkWrite(ops);
-        matchesCount = matches.length;
-        log.info(`✅ Saved ${matches.length} matches`);
+      if (teams.length > 0) {
+        stats.teamsCount = await saveTeams(teams);
       }
 
-      if (news.length > 0) {
-        const ops = news.map((n) => ({
-          updateOne: {
-            filter: { filgoalArticleId: n.filgoalArticleId },
-            update: { $set: n },
-            upsert: true,
-          },
-        }));
-        await FilgoalNews.bulkWrite(ops);
-        newsCount = news.length;
-        log.info(`✅ Saved ${news.length} news`);
+      if (pageType === 'overview' && news.length > 0) {
+        stats.newsCount = await saveNews(news);
+      }
+
+      if (scorers.length > 0) {
+        stats.scorersCount = await saveScorers(scorers);
       }
     },
 
@@ -402,33 +664,40 @@ const runScraper = async () => {
   });
 
   try {
-    await crawler.run([FILGOAL_URL]);
+    await crawler.run([FILGOAL_URL, STANDINGS_URL, SCORERS_URL]);
+
+    // ✅ احفظ كل المباريات المجمعة
+    if (allMatchesMap.size > 0) {
+      const allMatches = Array.from(allMatchesMap.values());
+      stats.matchesCount = await saveMatches(allMatches);
+      console.log(`✅ Saved ${stats.matchesCount} total matches from all pages`);
+    }
 
     await FilgoalSyncLog.create({
       status: 'success',
-      standingsCount,
-      matchesCount,
-      newsCount,
+      ...stats,
       duration: Date.now() - startTime,
     });
 
     console.log(`✅ Sync completed in ${Date.now() - startTime}ms`);
-    return { success: true, standingsCount, matchesCount, newsCount };
+    console.log(`📊 Stats:`, stats);
+    return { success: true, ...stats };
   } catch (error) {
     await FilgoalSyncLog.create({
       status: 'error',
-      standingsCount,
-      matchesCount,
-      newsCount,
+      ...stats,
       duration: Date.now() - startTime,
       error: error.message,
     });
 
     console.error('❌ Sync failed:', error.message);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message, ...stats };
   }
 };
 
+// ============================================
+// Entry Point
+// ============================================
 if (require.main === module) {
   (async () => {
     try {

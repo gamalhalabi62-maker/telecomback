@@ -1,0 +1,9 @@
+{
+	"id": "1FxCyP8jZbThMX3",
+	"json": "{\"id\":\"1FxCyP8jZbThMX3\",\"url\":\"https://www.filgoal.com/championships/1668/standings/دوري-المحترفين-المصري\",\"loadedUrl\":\"https://www.filgoal.com/championships/1668/standings/%D8%AF%D9%88%D8%B1%D9%8A-%D8%A7%D9%84%D9%85%D8%AD%D8%AA%D8%B1%D9%81%D9%8A%D9%86-%D8%A7%D9%84%D9%85%D8%B5%D8%B1%D9%8A\",\"uniqueKey\":\"https://www.filgoal.com/championships/1668/standings/%D8%AF%D9%88%D8%B1%D9%8A-%D8%A7%D9%84%D9%85%D8%AD%D8%AA%D8%B1%D9%81%D9%8A%D9%86-%D8%A7%D9%84%D9%85%D8%B5%D8%B1%D9%8A\",\"method\":\"GET\",\"noRetry\":false,\"retryCount\":0,\"errorMessages\":[],\"headers\":{},\"userData\":{\"__crawlee\":{\"state\":4}},\"handledAt\":\"2026-09-25T21:17:47.446Z\"}",
+	"method": "GET",
+	"orderNo": null,
+	"retryCount": 0,
+	"uniqueKey": "https://www.filgoal.com/championships/1668/standings/%D8%AF%D9%88%D8%B1%D9%8A-%D8%A7%D9%84%D9%85%D8%AD%D8%AA%D8%B1%D9%81%D9%8A%D9%86-%D8%A7%D9%84%D9%85%D8%B5%D8%B1%D9%8A",
+	"url": "https://www.filgoal.com/championships/1668/standings/دوري-المحترفين-المصري"
+}

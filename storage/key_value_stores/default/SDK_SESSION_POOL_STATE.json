@@ -1,9 +1,9 @@
 {
-  "usableSessionsCount": 2,
+  "usableSessionsCount": 4,
   "retiredSessionsCount": 0,
   "sessions": [
     {
-      "id": "session_wMEuOUCrRO",
+      "id": "session_oOU99ZNW6b",
       "cookieJar": {
         "version": "tough-cookie@6.0.2",
         "storeType": "MemoryCookieStore",
@@ -16,14 +16,168 @@
       "userData": {},
       "maxErrorScore": 3,
       "errorScoreDecrement": 0.5,
-      "expiresAt": "2026-09-25T21:26:46.225Z",
-      "createdAt": "2026-09-25T20:36:46.225Z",
+      "expiresAt": "2026-09-25T22:07:35.310Z",
+      "createdAt": "2026-09-25T21:17:35.310Z",
       "usageCount": 0,
       "maxUsageCount": 50,
       "errorScore": 0
     },
     {
-      "id": "session_jeON1t63FW",
+      "id": "session_SMMlH85XmE",
+      "cookieJar": {
+        "version": "tough-cookie@6.0.2",
+        "storeType": "MemoryCookieStore",
+        "rejectPublicSuffixes": true,
+        "enableLooseMode": false,
+        "allowSpecialUseDomain": true,
+        "prefixSecurity": "silent",
+        "cookies": [
+          {
+            "key": "IPInfo",
+            "value": "{\"country\":\"Egypt\",\"code\":\"EG\"}",
+            "expires": "2026-10-02T21:17:39.000Z",
+            "domain": "www.filgoal.com",
+            "path": "/",
+            "hostOnly": true,
+            "creation": "2026-09-25T21:17:50.250Z",
+            "lastAccessed": "2026-09-25T21:17:50.250Z"
+          },
+          {
+            "key": "FCCDCF",
+            "value": "%5Bnull%2Cnull%2Cnull%2Cnull%2Cnull%2Cnull%2C%5B%5B32%2C%22%5B%5C%227d0157a1-5135-4d6f-a4f7-b630b3539648%5C%22%2C%5B1790371060%2C103000000%5D%5D%22%5D%5D%5D",
+            "expires": "2027-10-20T21:17:41.000Z",
+            "domain": "filgoal.com",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-09-25T21:17:50.250Z",
+            "lastAccessed": "2026-09-25T21:17:50.250Z"
+          },
+          {
+            "key": "lotame_domain_check",
+            "value": "filgoal.com",
+            "expires": "2026-09-25T21:17:52.000Z",
+            "domain": "filgoal.com",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-09-25T21:17:50.255Z",
+            "lastAccessed": "2026-09-25T21:17:50.255Z"
+          },
+          {
+            "key": "_pubcid",
+            "value": "5302b038-d9bb-44aa-bc44-cd632ec69782",
+            "expires": "2027-06-22T21:17:41.000Z",
+            "domain": "filgoal.com",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-09-25T21:17:50.257Z",
+            "lastAccessed": "2026-09-25T21:17:50.257Z"
+          },
+          {
+            "key": "__gads",
+            "value": "ID=ce363ff016e022de:T=1790371063:RT=1790371063:S=ALNI_MZq1kob0fc6rX1GOjBJyzm3reS_PA",
+            "expires": "2027-10-20T21:17:43.000Z",
+            "domain": "filgoal.com",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-09-25T21:17:50.257Z",
+            "lastAccessed": "2026-09-25T21:17:50.257Z"
+          },
+          {
+            "key": "__gpi",
+            "value": "UID=0000157811db243a:T=1790371063:RT=1790371063:S=ALNI_MZf8e9ehLRWMPEWHa0QJPXIl66QoA",
+            "expires": "2027-10-20T21:17:43.000Z",
+            "domain": "filgoal.com",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-09-25T21:17:50.257Z",
+            "lastAccessed": "2026-09-25T21:17:50.257Z"
+          },
+          {
+            "key": "_cc_id",
+            "value": "45c6604bccd777e785387ae35106c549",
+            "expires": "2027-06-22T21:17:42.000Z",
+            "domain": "filgoal.com",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-09-25T21:17:50.258Z",
+            "lastAccessed": "2026-09-25T21:17:50.258Z"
+          },
+          {
+            "key": "panoramaId",
+            "value": "e9e5c4f6b1ed88e77f235928525b185ca02cc1f738d99d3fe2e283aafd42d76d",
+            "expires": "2026-10-02T21:17:44.000Z",
+            "domain": "filgoal.com",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-09-25T21:17:50.258Z",
+            "lastAccessed": "2026-09-25T21:17:50.258Z"
+          },
+          {
+            "key": "panoramaIdType",
+            "value": "panoDevice",
+            "expires": "2026-10-02T21:17:44.000Z",
+            "domain": "filgoal.com",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-09-25T21:17:50.258Z",
+            "lastAccessed": "2026-09-25T21:17:50.258Z"
+          },
+          {
+            "key": "panoramaId_expiry",
+            "value": "1790975864103",
+            "expires": "2026-10-02T21:17:44.000Z",
+            "domain": "filgoal.com",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-09-25T21:17:50.258Z",
+            "lastAccessed": "2026-09-25T21:17:50.258Z"
+          },
+          {
+            "key": "FCNEC",
+            "value": "%5B%5B%22AKsRol_4Y-YMrV3FB1m545iFchEE0SfV8mzY978lBrHOnqJSqUJVDEiyeeZnJCMVsoZ7nMDFO5PKs7WDS8k96pVUa2KreGl_6-DoZNwJa3eycOvQPRIupRvKyCKgbh3rNwR-eVyIwufpcc7AtJP560HeDI_95QYu6g%3D%3D%22%5D%5D",
+            "expires": "2027-09-25T21:17:42.000Z",
+            "domain": "filgoal.com",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-09-25T21:17:50.258Z",
+            "lastAccessed": "2026-09-25T21:17:50.258Z"
+          },
+          {
+            "key": "__eoi",
+            "value": "ID=312422bcf0ed6f90:T=1790371062:RT=1790371062:S=AA-AfjYOgzeJdtdDJoNfubVRp6Pt",
+            "expires": "2027-03-24T21:17:42.000Z",
+            "domain": "filgoal.com",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2026-09-25T21:17:50.258Z",
+            "lastAccessed": "2026-09-25T21:17:50.258Z"
+          },
+          {
+            "key": "cto_bundle",
+            "value": "P38EPl9QWEdjVGcweDQlMkZtMVNlOGpjaCUyQmFLUFc1eXJpQ01NenlLRFVORVVjUUh5SmloZjZsVVA2bldadmJHcEtseFJSYXdiTCUyRmZNMVdUdHNTNGdZSXJmdk5mSFIxYkNQREJjWmdSUGdVJTJGZjZZdFRLRCUyQlB2Z0VNdXc0dWduRlpUdkltM1hjN2tKZWxBSGlDSEl2eHdWa25lU0FnJTNEJTNE",
+            "expires": "2027-10-20T21:17:43.000Z",
+            "domain": "filgoal.com",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2026-09-25T21:17:50.258Z",
+            "lastAccessed": "2026-09-25T21:17:50.258Z"
+          }
+        ]
+      },
+      "userData": {},
+      "maxErrorScore": 3,
+      "errorScoreDecrement": 0.5,
+      "expiresAt": "2026-09-25T22:07:35.314Z",
+      "createdAt": "2026-09-25T21:17:35.314Z",
+      "usageCount": 3,
+      "maxUsageCount": 50,
+      "errorScore": 0
+    },
+    {
+      "id": "session_NvqN1fFb1g",
       "cookieJar": {
         "version": "tough-cookie@6.0.2",
         "storeType": "MemoryCookieStore",
@@ -36,9 +190,29 @@
       "userData": {},
       "maxErrorScore": 3,
       "errorScoreDecrement": 0.5,
-      "expiresAt": "2026-09-25T21:26:46.230Z",
-      "createdAt": "2026-09-25T20:36:46.230Z",
-      "usageCount": 1,
+      "expiresAt": "2026-09-25T22:07:35.326Z",
+      "createdAt": "2026-09-25T21:17:35.326Z",
+      "usageCount": 0,
+      "maxUsageCount": 50,
+      "errorScore": 0
+    },
+    {
+      "id": "session_qKymmt8uvB",
+      "cookieJar": {
+        "version": "tough-cookie@6.0.2",
+        "storeType": "MemoryCookieStore",
+        "rejectPublicSuffixes": true,
+        "enableLooseMode": false,
+        "allowSpecialUseDomain": true,
+        "prefixSecurity": "silent",
+        "cookies": []
+      },
+      "userData": {},
+      "maxErrorScore": 3,
+      "errorScoreDecrement": 0.5,
+      "expiresAt": "2026-09-25T22:07:48.390Z",
+      "createdAt": "2026-09-25T21:17:48.390Z",
+      "usageCount": 0,
       "maxUsageCount": 50,
       "errorScore": 0
     }
