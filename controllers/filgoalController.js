@@ -256,7 +256,7 @@ const scrapeNewsDetails = async (req, res) => {
 
   try {
     const existing = await FilgoalNews.findOne({ filgoalArticleId: articleId });
-    if (existing?.content && existing.content.length > 100) {
+    if (existing?.content && existing.content.length > 100 && existing.content.length < 20000) {
       return res.json({ news: existing, cached: true });
     }
   } catch (e) {}
@@ -269,8 +269,6 @@ const scrapeNewsDetails = async (req, res) => {
         'User-Agent':
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept-Language': 'ar-EG,ar;q=0.9,en;q=0.8',
-        Accept:
-          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
       },
       timeout: 30000,
       maxRedirects: 5,
@@ -297,27 +295,72 @@ const scrapeNewsDetails = async (req, res) => {
       '.article-content',
       '.news-content',
       '.article_details',
-      'article',
-      '.content',
-      '.body',
       '.news_details',
+      'article',
     ];
 
+    let $content = null;
     for (const sel of contentSelectors) {
       const el = $(sel).first();
       if (el.length && el.text().trim().length > 200) {
-        content = el.html();
+        $content = el;
         break;
       }
     }
 
-    if (!content) {
+    if ($content) {
+      $content.find(
+        'script, style, iframe, .ad, .ads, .advertisement, .social, .share, .tags, .related, .related-news, .more-news, .most-read, .matches, .match-slider, .tab-links, .sidebar, .comments, .newsletter, .most_watched, .also_read, .also-read, .news_block, .breaking, .rate_mn, .grid-item, nav, footer, header, aside, button'
+      ).remove();
+
+      $content.find('[class*="related"], [class*="share"], [class*="most"], [class*="also"], [class*="recommend"], [class*="promo"], [class*="ad-"], [id*="ad-"]').remove();
+
+      const paragraphs = [];
+      $content.find('p, h2, h3, h4, blockquote, ul, ol, img, iframe').each((i, el) => {
+        const tag = el.tagName.toLowerCase();
+        const $el = $(el);
+
+        if (tag === 'img') {
+          const src = $el.attr('src') || $el.attr('data-src') || '';
+          const alt = $el.attr('alt') || '';
+          if (src && src.startsWith('http')) {
+            paragraphs.push(`<img src="${src}" alt="${alt}" />`);
+          }
+          return;
+        }
+
+        if (tag === 'iframe') {
+          const src = $el.attr('src') || '';
+          if (src) paragraphs.push(`<iframe src="${src}" allowfullscreen></iframe>`);
+          return;
+        }
+
+        const text = $el.text().trim();
+        if (text.length < 20) return;
+
+        if (tag === 'h2' || tag === 'h3' || tag === 'h4') {
+          paragraphs.push(`<${tag}>${text}</${tag}>`);
+        } else if (tag === 'blockquote') {
+          paragraphs.push(`<blockquote>${text}</blockquote>`);
+        } else if (tag === 'ul' || tag === 'ol') {
+          paragraphs.push(`<${tag}>${$el.html()}</${tag}>`);
+        } else {
+          paragraphs.push(`<p>${text}</p>`);
+        }
+      });
+
+      content = paragraphs.join('\n');
+    }
+
+    if (!content || content.length < 100) {
       const paragraphs = [];
       $('p').each((i, p) => {
         const text = $(p).text().trim();
-        if (text.length > 30) paragraphs.push(`<p>${text}</p>`);
+        if (text.length > 40 && !text.includes('نرشح لكم') && !text.includes('الأكثر مشاهدة') && !text.includes('أخبار ذات صلة')) {
+          paragraphs.push(`<p>${text}</p>`);
+        }
       });
-      content = paragraphs.join('');
+      content = paragraphs.slice(0, 20).join('\n');
     }
 
     let publishedAt = new Date();
@@ -343,7 +386,7 @@ const scrapeNewsDetails = async (req, res) => {
     const tags = [];
     $('.tags a, .article_tags a, [rel="tag"]').each((i, el) => {
       const tag = $(el).text().trim();
-      if (tag) tags.push(tag);
+      if (tag && tag.length < 30) tags.push(tag);
     });
 
     if (!title) {
@@ -358,7 +401,7 @@ const scrapeNewsDetails = async (req, res) => {
           imageUrl,
           content,
           author,
-          tags,
+          tags: tags.slice(0, 5),
           publishedAt,
           url: ARTICLE_URL,
           syncedAt: new Date(),
@@ -376,7 +419,6 @@ const scrapeNewsDetails = async (req, res) => {
     });
   }
 };
-
 const getStats = async (req, res) => {
   try {
     const { championshipId = CHAMPIONSHIP_ID } = req.query;
