@@ -13,8 +13,7 @@ const buildFullNumber = (companyNumber, membershipNumber) => {
 
 const detectMembershipType = (raw) => {
   const val = String(raw || '').trim();
-  if (val.includes('معاش') || val.includes('بالمعاش')) return 'retired';
-  if (val.includes('عامل') || val.includes('عاملة')) return 'working';
+  if (val.includes('معاش')) return 'retired';
   return 'working';
 };
 
@@ -27,14 +26,10 @@ const detectGender = (raw) => {
 
 const searchMember = async (req, res) => {
   try {
-    const { membershipType, input } = req.body;
+    const { input } = req.body;
 
-    if (!membershipType || !input) {
-      return res.status(400).json({ message: 'نوع العضوية والرقم مطلوبان' });
-    }
-
-    if (!['working', 'retired'].includes(membershipType)) {
-      return res.status(400).json({ message: 'نوع العضوية غير صحيح' });
+    if (!input) {
+      return res.status(400).json({ message: 'رقم الشركة مطلوب' });
     }
 
     const cleaned = String(input).replace(/\D/g, '');
@@ -44,14 +39,11 @@ const searchMember = async (req, res) => {
       });
     }
 
-    const member = await Member.findOne({
-      companyNumber: cleaned,
-      membershipType,
-    });
+    const member = await Member.findOne({ companyNumber: cleaned });
 
     if (!member) {
       return res.status(404).json({
-        message: 'لم يتم العثور على عضو بهذه البيانات. تأكد من نوع العضوية ورقم الشركة.',
+        message: 'لم يتم العثور على عضو بهذا الرقم. تأكد من الرقم وحاول مرة أخرى.',
         notFound: true,
       });
     }
@@ -105,6 +97,7 @@ const registerAttendance = async (req, res) => {
     const attendance = await ElectionAttendance.create({
       member: member._id,
       fullMembershipNumber: member.fullMembershipNumber,
+      companyNumber: member.companyNumber,
       membershipType: member.membershipType,
       name: member.name,
       phone: member.phone,
@@ -166,6 +159,7 @@ const getAttendanceList = async (req, res) => {
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
+        { companyNumber: { $regex: search, $options: 'i' } },
         { fullMembershipNumber: { $regex: search, $options: 'i' } },
         { phone: { $regex: search, $options: 'i' } },
       ];
@@ -256,7 +250,7 @@ const exportAttendance = async (req, res) => {
 
     const data = list.map((item, index) => ({
       'م': index + 1,
-      'رقم العضوية الكامل': item.fullMembershipNumber,
+      'رقم الشركة': item.companyNumber || '',
       'الاسم': item.name,
       'نوع العضوية': item.membershipType === 'working' ? 'عامل' : 'بالمعاش',
       'الهاتف': item.phone,
@@ -271,7 +265,7 @@ const exportAttendance = async (req, res) => {
     XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
 
     ws['!cols'] = [
-      { wch: 6 }, { wch: 20 }, { wch: 30 }, { wch: 12 },
+      { wch: 6 }, { wch: 14 }, { wch: 30 }, { wch: 12 },
       { wch: 15 }, { wch: 12 }, { wch: 30 }, { wch: 12 }, { wch: 22 },
     ];
 
@@ -296,135 +290,117 @@ const importMembersFromExcel = async (req, res) => {
     const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+    const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
-    if (rows.length === 0) {
+    if (allRows.length === 0) {
       return res.status(400).json({ message: 'الملف فارغ' });
     }
 
-    console.log(`📊 Read ${rows.length} rows from Excel`);
-    console.log('First row keys:', Object.keys(rows[0]));
+    console.log(`📊 Total rows in file: ${allRows.length}`);
 
-    const findKey = (obj, candidates) => {
-      const keys = Object.keys(obj);
-      for (const candidate of candidates) {
-        const found = keys.find((k) =>
-          k.replace(/\s+/g, '').includes(candidate.replace(/\s+/g, ''))
-        );
-        if (found) return found;
-      }
-      return null;
+    const isHeaderRow = (row) => {
+      if (!row) return false;
+      const str = row.map(c => String(c || '')).join('|');
+      return str.includes('الاسم') && (str.includes('رقم العضوية') || str.includes('رقم العضو'));
     };
 
-    const sampleKeys = Object.keys(rows[0]);
+    let headerRowIndex = -1;
+    for (let i = 0; i < Math.min(allRows.length, 20); i++) {
+      if (isHeaderRow(allRows[i])) {
+        headerRowIndex = i;
+        break;
+      }
+    }
 
-    const keyCompany = findKey(rows[0], ['رقمالشركة', 'رقمالشركه', 'الشركة', 'رقم الشركة']);
-    const keyMembership = findKey(rows[0], ['رقمالعضوية', 'رقمالعضويه', 'العضوية', 'رقم العضوية']);
-    const keyType = findKey(rows[0], ['النوع', 'نوعالعضوية', 'نوع العضوية']);
-    const keyName = findKey(rows[0], ['الاسم', 'الاسم'],
-      );
-    const keyPhone = findKey(rows[0], ['التليفون', 'الهاتف', 'الموبايل', 'تليفون']);
-    const keyAddress = findKey(rows[0], ['العنوان', 'عنوان']);
-    const keyGender = findKey(rows[0], ['النوعذكر', 'ذكر', 'الجنس']);
-    const keyCommitteeName = findKey(rows[0], ['مكاناللجنة', 'مكان اللجنة', 'اللجنة', 'مكاناللجنه']);
-    const keyCommitteeNumber = findKey(rows[0], ['رقماللجنة', 'رقم اللجنة', 'رقماللجنه']);
-
-    if (!keyCompany || !keyMembership || !keyName) {
+    if (headerRowIndex === -1) {
       return res.status(400).json({
-        message: 'تعذّر العثور على أعمدة أساسية (رقم الشركة، رقم العضوية، الاسم)',
-        detectedColumns: sampleKeys,
-        foundKeys: {
-          company: keyCompany,
-          membership: keyMembership,
-          name: keyName,
-          type: keyType,
-          phone: keyPhone,
-        },
+        message: 'تعذّر العثور على صف العناوين في الملف',
       });
     }
+
+    console.log(`📌 Header row found at index ${headerRowIndex}`);
+    console.log(`   Headers:`, allRows[headerRowIndex]);
+
+    const dataRows = allRows
+      .slice(headerRowIndex + 1)
+      .map((row, idx) => ({ row, originalIndex: headerRowIndex + 1 + idx }))
+      .filter(({ row }) => {
+        if (!row || row.length === 0) return false;
+        const name = String(row[6] || '').trim();
+        return name.length >= 2;
+      });
+
+    console.log(`📊 Data rows to process: ${dataRows.length}`);
 
     let created = 0;
     let updated = 0;
     let skipped = 0;
     const errors = [];
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
+    for (const { row, originalIndex } of dataRows) {
       try {
-        const companyRaw = String(row[keyCompany] || '').trim();
-        const membershipRaw = String(row[keyMembership] || '').trim();
-        const nameRaw = String(row[keyName] || '').trim();
+        const typeRaw = String(row[2] || '').trim();
+        const companyRaw = String(row[3] || '').trim();
+        const membershipRaw = String(row[5] || '').trim();
+        const nameRaw = String(row[6] || '').trim();
+        const addressRaw = String(row[7] || '').trim();
+        const genderRaw = String(row[8] || '').trim();
+        const phoneRaw = String(row[9] || '').trim();
 
-        if (!companyRaw || !membershipRaw || !nameRaw) {
+        if (!companyRaw || !membershipRaw || !nameRaw || nameRaw.length < 2) {
           skipped++;
           continue;
         }
 
-        if (nameRaw.includes('ايفون') && membershipRaw === '001') {
-          // debug skip
+        const companyClean = companyRaw.replace(/\D/g, '');
+        const membershipClean = membershipRaw.replace(/\D/g, '');
+        if (!companyClean || !membershipClean) {
+          skipped++;
+          continue;
         }
 
-        const companyNumber = padCompany(companyRaw);
-        const membershipNumber = padMembership(membershipRaw);
-
-        const membershipTypeRaw = keyType ? String(row[keyType] || '').trim() : 'عامل';
-        const membershipType = detectMembershipType(membershipTypeRaw);
-
-        const genderRaw = keyGender ? String(row[keyGender] || '').trim() : '';
-        let gender = detectGender(genderRaw);
-        if (!gender) {
-          gender = detectGender(String(row['النوع'] || ''));
-        }
-
+        const companyNumber = padCompany(companyClean);
+        const membershipNumber = padMembership(membershipClean);
         const fullNumber = buildFullNumber(companyNumber, membershipNumber);
+        const membershipType = detectMembershipType(typeRaw);
 
-        const updateData = {
+        const data = {
           companyNumber,
           membershipNumber,
           fullMembershipNumber: fullNumber,
           membershipType,
           name: nameRaw,
-          phone: keyPhone ? String(row[keyPhone] || '').trim() : '',
-          address: keyAddress ? String(row[keyAddress] || '').trim() : '',
-          gender,
+          phone: phoneRaw === '0' ? '' : phoneRaw,
+          address: addressRaw === '0' ? '' : addressRaw,
+          gender: detectGender(genderRaw),
         };
-
-        if (keyCommitteeName) updateData.committeeName = String(row[keyCommitteeName] || '').trim();
-        if (keyCommitteeNumber) updateData.committeeNumber = String(row[keyCommitteeNumber] || '').trim();
 
         const existing = await Member.findOne({ fullMembershipNumber: fullNumber });
 
         if (existing) {
-          await Member.updateOne({ _id: existing._id }, { $set: updateData });
+          await Member.updateOne({ _id: existing._id }, { $set: data });
           updated++;
         } else {
-          await Member.create(updateData);
+          await Member.create(data);
           created++;
         }
       } catch (rowErr) {
-        errors.push({ row: i + 2, error: rowErr.message });
+        errors.push({ row: originalIndex + 1, error: rowErr.message });
       }
     }
 
     res.json({
       message: '✅ تم استيراد البيانات بنجاح',
       summary: {
-        total: rows.length,
+        total: dataRows.length,
         created,
         updated,
         skipped,
         errorsCount: errors.length,
       },
       detectedColumns: {
-        company: keyCompany,
-        membership: keyMembership,
-        name: keyName,
-        type: keyType,
-        phone: keyPhone,
-        address: keyAddress,
-        gender: keyGender,
-        committeeName: keyCommitteeName,
-        committeeNumber: keyCommitteeNumber,
+        headerRowIndex,
+        headers: allRows[headerRowIndex],
       },
       errors: errors.slice(0, 10),
     });
