@@ -73,7 +73,7 @@ app.use('/api/messages', require('./routes/messageRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 
 app.use('/api/test', require('./routes/testRoutes'));
-
+app.use('/api/filgoal', require('./routes/filgoalRoutes'));
 app.use('/api/elections', require('./routes/electionRoutes'));
 app.get('/health', (req, res) => {
   res.status(200).json({
@@ -85,20 +85,8 @@ app.get('/health', (req, res) => {
 
 app.get('/', (req, res) => {
   res.json({
-    message: 'مرحباً بك في API نادي المصرية للاتصالات',
+    message: 'Error 404',
     version: '2.1',
-    environment: process.env.NODE_ENV || 'development',
-    endpoints: {
-      auth: '/api/auth',
-      news: '/api/news',
-      videos: '/api/videos',
-      players: '/api/players',
-      matches: '/api/matches',
-      statistics: '/api/statistics',
-      messages: '/api/messages',
-      notifications: '/api/notifications',
-      test: '/api/test/cloudinary',
-    },
   });
 });
 
@@ -153,6 +141,21 @@ app.use((req, res) => {
 
 
 const PORT = process.env.PORT || 5000;
+
+const cron = require('node-cron');
+const { runScraper } = require('./scripts/scrapeFilGoal');
+
+cron.schedule('0 6 * * *', async () => {
+  console.log('\n⏰ [CRON] Starting FilGoal daily sync...');
+  try {
+    const result = await runScraper();
+    console.log('✅ [CRON] Sync result:', result);
+  } catch (err) {
+    console.error('❌ [CRON] Sync error:', err.message);
+  }
+});
+
+console.log('⏰ Cron job scheduled: FilGoal sync daily at 6 AM');
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log('');
