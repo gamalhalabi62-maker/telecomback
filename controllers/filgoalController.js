@@ -1,3 +1,5 @@
+const axios = require('axios');
+const cheerio = require('cheerio');
 const {
   FilgoalStanding,
   FilgoalMatch,
@@ -250,9 +252,6 @@ const getNewsById = async (req, res) => {
 };
 
 const scrapeNewsDetails = async (req, res) => {
-  const { PlaywrightCrawler } = require('crawlee');
-  const cheerio = require('cheerio');
-
   const articleId = Number(req.params.id);
 
   try {
@@ -263,108 +262,91 @@ const scrapeNewsDetails = async (req, res) => {
   } catch (e) {}
 
   const ARTICLE_URL = `https://www.filgoal.com/articles/${articleId}`;
-  let result = null;
-
-  const crawler = new PlaywrightCrawler({
-    launchContext: {
-      useChrome: true,
-      launchOptions: {
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-      },
-    },
-    maxRequestsPerCrawl: 1,
-    requestHandlerTimeoutSecs: 60,
-    navigationTimeoutSecs: 60,
-    maxRequestRetries: 1,
-
-    preNavigationHooks: [
-      async ({ page }) => {
-        await page.setExtraHTTPHeaders({
-          'Accept-Language': 'ar-EG,ar;q=0.9,en;q=0.8',
-        });
-      },
-    ],
-
-    async requestHandler({ page, request, log }) {
-      await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
-      await page.waitForTimeout(2000);
-
-      const html = await page.content();
-      const $ = cheerio.load(html);
-
-      let title = $('h1').first().text().trim() ||
-                  $('meta[property="og:title"]').attr('content') || '';
-
-      let imageUrl =
-        $('meta[property="og:image"]').attr('content') ||
-        $('.article_img img, .main-img img, article img').first().attr('src') || '';
-      if (imageUrl && imageUrl.startsWith('//')) imageUrl = `https:${imageUrl}`;
-
-      let content = '';
-      const contentSelectors = [
-        '.article_body',
-        '.article-content',
-        '.news-content',
-        'article',
-        '.content',
-        '.body',
-      ];
-      for (const sel of contentSelectors) {
-        const el = $(sel).first();
-        if (el.length && el.text().trim().length > 200) {
-          content = el.html();
-          break;
-        }
-      }
-
-      if (!content) {
-        const paragraphs = [];
-        $('p').each((i, p) => {
-          const text = $(p).text().trim();
-          if (text.length > 30) paragraphs.push(text);
-        });
-        content = paragraphs.join('\n\n');
-      }
-
-      let publishedAt = new Date();
-      const dateMeta = $('meta[property="article:published_time"]').attr('content');
-      if (dateMeta) publishedAt = new Date(dateMeta);
-
-      let author = '';
-      const authorSelectors = ['.author_name', '.author', '[rel="author"]', '.writer'];
-      for (const sel of authorSelectors) {
-        const el = $(sel).first();
-        if (el.length) {
-          author = el.text().trim();
-          break;
-        }
-      }
-
-      const tags = [];
-      $('.tags a, .article_tags a, [rel="tag"]').each((i, el) => {
-        const tag = $(el).text().trim();
-        if (tag) tags.push(tag);
-      });
-
-      result = {
-        title,
-        imageUrl,
-        content,
-        author,
-        tags,
-        publishedAt,
-        url: request.url,
-      };
-
-      log.info(`Scraped article ${articleId}: ${title}`);
-    },
-  });
 
   try {
-    await crawler.run([ARTICLE_URL]);
+    const response = await axios.get(ARTICLE_URL, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'ar-EG,ar;q=0.9,en;q=0.8',
+        Accept:
+          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      },
+      timeout: 30000,
+      maxRedirects: 5,
+    });
 
-    if (!result || !result.title) {
+    const html = response.data;
+    const $ = cheerio.load(html);
+
+    let title =
+      $('h1').first().text().trim() ||
+      $('meta[property="og:title"]').attr('content') ||
+      $('title').text().trim() ||
+      '';
+
+    let imageUrl =
+      $('meta[property="og:image"]').attr('content') ||
+      $('.article_img img, .main-img img, article img').first().attr('src') ||
+      '';
+    if (imageUrl && imageUrl.startsWith('//')) imageUrl = `https:${imageUrl}`;
+
+    let content = '';
+    const contentSelectors = [
+      '.article_body',
+      '.article-content',
+      '.news-content',
+      '.article_details',
+      'article',
+      '.content',
+      '.body',
+      '.news_details',
+    ];
+
+    for (const sel of contentSelectors) {
+      const el = $(sel).first();
+      if (el.length && el.text().trim().length > 200) {
+        content = el.html();
+        break;
+      }
+    }
+
+    if (!content) {
+      const paragraphs = [];
+      $('p').each((i, p) => {
+        const text = $(p).text().trim();
+        if (text.length > 30) paragraphs.push(`<p>${text}</p>`);
+      });
+      content = paragraphs.join('');
+    }
+
+    let publishedAt = new Date();
+    const dateMeta = $('meta[property="article:published_time"]').attr('content');
+    if (dateMeta) publishedAt = new Date(dateMeta);
+
+    let author = '';
+    const authorSelectors = [
+      '.author_name',
+      '.author',
+      '[rel="author"]',
+      '.writer',
+      '.article_author',
+    ];
+    for (const sel of authorSelectors) {
+      const el = $(sel).first();
+      if (el.length) {
+        author = el.text().trim();
+        break;
+      }
+    }
+
+    const tags = [];
+    $('.tags a, .article_tags a, [rel="tag"]').each((i, el) => {
+      const tag = $(el).text().trim();
+      if (tag) tags.push(tag);
+    });
+
+    if (!title) {
       return res.status(404).json({ message: 'فشل جلب تفاصيل الخبر' });
     }
 
@@ -372,13 +354,13 @@ const scrapeNewsDetails = async (req, res) => {
       { filgoalArticleId: articleId },
       {
         $set: {
-          title: result.title,
-          imageUrl: result.imageUrl,
-          content: result.content,
-          author: result.author,
-          tags: result.tags,
-          publishedAt: result.publishedAt,
-          url: result.url,
+          title,
+          imageUrl,
+          content,
+          author,
+          tags,
+          publishedAt,
+          url: ARTICLE_URL,
           syncedAt: new Date(),
         },
       },
@@ -387,8 +369,11 @@ const scrapeNewsDetails = async (req, res) => {
 
     res.json({ news, cached: false });
   } catch (error) {
-    console.error('Scrape error:', error);
-    res.status(500).json({ message: 'فشل جلب تفاصيل الخبر', error: error.message });
+    console.error('Scrape error:', error.message);
+    res.status(500).json({
+      message: 'فشل جلب تفاصيل الخبر',
+      error: error.message,
+    });
   }
 };
 
