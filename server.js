@@ -141,21 +141,22 @@ app.use((req, res) => {
 
 
 const PORT = process.env.PORT || 5000;
-
 const cron = require('node-cron');
 const { runScraper } = require('./scripts/scrapeFilGoal');
 
-cron.schedule('0 6 * * *', async () => {
-  console.log('\n⏰ [CRON] Starting FilGoal daily sync...');
+cron.schedule('*/30 * * * *', async () => {
+  console.log('\n⏰ [CRON] FilGoal full sync (every 30 min)...');
   try {
     const result = await runScraper();
     console.log('✅ [CRON] Sync result:', result);
   } catch (err) {
     console.error('❌ [CRON] Sync error:', err.message);
   }
+}, {
+  timezone: 'Africa/Cairo',
 });
 
-console.log('⏰ Cron job scheduled: FilGoal sync daily at 6 AM');
+console.log('⏰ Cron job scheduled: FilGoal full sync every 30 minutes');
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log('');
