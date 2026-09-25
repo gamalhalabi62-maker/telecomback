@@ -11,9 +11,6 @@ const { runScraper } = require('../scripts/scrapeFilGoal');
 const CHAMPIONSHIP_ID = 1668;
 const CHAMPIONSHIP_NAME = 'دوري المحترفين المصري';
 
-// ═══════════════════════════════════════════════════════════
-//  STANDINGS
-// ═══════════════════════════════════════════════════════════
 const getStandings = async (req, res) => {
   try {
     const { group } = req.query;
@@ -30,9 +27,6 @@ const getStandings = async (req, res) => {
   }
 };
 
-// ═══════════════════════════════════════════════════════════
-//  MATCHES
-// ═══════════════════════════════════════════════════════════
 const getMatches = async (req, res) => {
   try {
     const { status, limit = 100, ourTeam, championshipId } = req.query;
@@ -122,7 +116,6 @@ const getMatchById = async (req, res) => {
   }
 };
 
-// ✅ مباريات دوري المحترفين فقط
 const getChampionshipMatches = async (req, res) => {
   try {
     const { championshipId = CHAMPIONSHIP_ID, status, limit = 50 } = req.query;
@@ -139,7 +132,6 @@ const getChampionshipMatches = async (req, res) => {
   }
 };
 
-// ✅ كل البطولات المتاحة (للفلترة)
 const getChampionships = async (req, res) => {
   try {
     const championships = await FilgoalMatch.aggregate([
@@ -159,9 +151,6 @@ const getChampionships = async (req, res) => {
   }
 };
 
-// ═══════════════════════════════════════════════════════════
-//  TEAMS
-// ═══════════════════════════════════════════════════════════
 const getTeams = async (req, res) => {
   try {
     const { championshipId = CHAMPIONSHIP_ID } = req.query;
@@ -217,9 +206,6 @@ const getTeamById = async (req, res) => {
   }
 };
 
-// ═══════════════════════════════════════════════════════════
-//  SCORERS
-// ═══════════════════════════════════════════════════════════
 const getScorers = async (req, res) => {
   try {
     const { limit = 20, championshipId = CHAMPIONSHIP_ID } = req.query;
@@ -235,9 +221,6 @@ const getScorers = async (req, res) => {
   }
 };
 
-// ═══════════════════════════════════════════════════════════
-//  NEWS
-// ═══════════════════════════════════════════════════════════
 const getNews = async (req, res) => {
   try {
     const { limit = 20 } = req.query;
@@ -251,9 +234,164 @@ const getNews = async (req, res) => {
   }
 };
 
-// ═══════════════════════════════════════════════════════════
-//  STATS
-// ═══════════════════════════════════════════════════════════
+const getNewsById = async (req, res) => {
+  try {
+    const articleId = Number(req.params.id);
+    const news = await FilgoalNews.findOne({ filgoalArticleId: articleId });
+
+    if (!news) {
+      return res.status(404).json({ message: 'الخبر غير موجود' });
+    }
+
+    res.json({ news });
+  } catch (error) {
+    res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
+  }
+};
+
+const scrapeNewsDetails = async (req, res) => {
+  const { PlaywrightCrawler } = require('crawlee');
+  const cheerio = require('cheerio');
+
+  const articleId = Number(req.params.id);
+
+  try {
+    const existing = await FilgoalNews.findOne({ filgoalArticleId: articleId });
+    if (existing?.content && existing.content.length > 100) {
+      return res.json({ news: existing, cached: true });
+    }
+  } catch (e) {}
+
+  const ARTICLE_URL = `https://www.filgoal.com/articles/${articleId}`;
+  let result = null;
+
+  const crawler = new PlaywrightCrawler({
+    launchContext: {
+      useChrome: true,
+      launchOptions: {
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      },
+    },
+    maxRequestsPerCrawl: 1,
+    requestHandlerTimeoutSecs: 60,
+    navigationTimeoutSecs: 60,
+    maxRequestRetries: 1,
+
+    preNavigationHooks: [
+      async ({ page }) => {
+        await page.setExtraHTTPHeaders({
+          'Accept-Language': 'ar-EG,ar;q=0.9,en;q=0.8',
+        });
+      },
+    ],
+
+    async requestHandler({ page, request, log }) {
+      await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+      await page.waitForTimeout(2000);
+
+      const html = await page.content();
+      const $ = cheerio.load(html);
+
+      let title = $('h1').first().text().trim() ||
+                  $('meta[property="og:title"]').attr('content') || '';
+
+      let imageUrl =
+        $('meta[property="og:image"]').attr('content') ||
+        $('.article_img img, .main-img img, article img').first().attr('src') || '';
+      if (imageUrl && imageUrl.startsWith('//')) imageUrl = `https:${imageUrl}`;
+
+      let content = '';
+      const contentSelectors = [
+        '.article_body',
+        '.article-content',
+        '.news-content',
+        'article',
+        '.content',
+        '.body',
+      ];
+      for (const sel of contentSelectors) {
+        const el = $(sel).first();
+        if (el.length && el.text().trim().length > 200) {
+          content = el.html();
+          break;
+        }
+      }
+
+      if (!content) {
+        const paragraphs = [];
+        $('p').each((i, p) => {
+          const text = $(p).text().trim();
+          if (text.length > 30) paragraphs.push(text);
+        });
+        content = paragraphs.join('\n\n');
+      }
+
+      let publishedAt = new Date();
+      const dateMeta = $('meta[property="article:published_time"]').attr('content');
+      if (dateMeta) publishedAt = new Date(dateMeta);
+
+      let author = '';
+      const authorSelectors = ['.author_name', '.author', '[rel="author"]', '.writer'];
+      for (const sel of authorSelectors) {
+        const el = $(sel).first();
+        if (el.length) {
+          author = el.text().trim();
+          break;
+        }
+      }
+
+      const tags = [];
+      $('.tags a, .article_tags a, [rel="tag"]').each((i, el) => {
+        const tag = $(el).text().trim();
+        if (tag) tags.push(tag);
+      });
+
+      result = {
+        title,
+        imageUrl,
+        content,
+        author,
+        tags,
+        publishedAt,
+        url: request.url,
+      };
+
+      log.info(`Scraped article ${articleId}: ${title}`);
+    },
+  });
+
+  try {
+    await crawler.run([ARTICLE_URL]);
+
+    if (!result || !result.title) {
+      return res.status(404).json({ message: 'فشل جلب تفاصيل الخبر' });
+    }
+
+    const news = await FilgoalNews.findOneAndUpdate(
+      { filgoalArticleId: articleId },
+      {
+        $set: {
+          title: result.title,
+          imageUrl: result.imageUrl,
+          content: result.content,
+          author: result.author,
+          tags: result.tags,
+          publishedAt: result.publishedAt,
+          url: result.url,
+          syncedAt: new Date(),
+        },
+      },
+      { new: true, upsert: true }
+    );
+
+    res.json({ news, cached: false });
+  } catch (error) {
+    console.error('Scrape error:', error);
+    res.status(500).json({ message: 'فشل جلب تفاصيل الخبر', error: error.message });
+  }
+};
+
 const getStats = async (req, res) => {
   try {
     const { championshipId = CHAMPIONSHIP_ID } = req.query;
@@ -267,7 +405,6 @@ const getStats = async (req, res) => {
       championshipId: champId,
     });
 
-    // ✅ مباريات البطولة المحددة فقط
     const championshipMatches = await FilgoalMatch.countDocuments({
       championshipId: champId,
     });
@@ -287,7 +424,6 @@ const getStats = async (req, res) => {
 
     const totalNews = await FilgoalNews.countDocuments();
 
-    // ✅ ourTeam من FilgoalTeam + FilgoalStanding
     const ourTeamInfo = await FilgoalTeam.findOne({ isOurTeam: true });
     const ourStanding = await FilgoalStanding.findOne({ isOurTeam: true });
 
@@ -299,7 +435,6 @@ const getStats = async (req, res) => {
         }
       : null;
 
-    // ✅ إحصائيات البطولة (أهداف، بطاقات)
     const standingsAgg = await FilgoalStanding.aggregate([
       { $match: { group: { $exists: true } } },
       {
@@ -331,7 +466,7 @@ const getStats = async (req, res) => {
       live,
       finished,
       totalNews,
-      totalGoals: Math.floor(champStats.totalGoals / 2), // كل هدف محسوب مرتين (له لكل فريق)
+      totalGoals: Math.floor(champStats.totalGoals / 2),
       totalYellowCards: champStats.totalYellowCards,
       totalRedCards: champStats.totalRedCards,
       ourTeam,
@@ -342,9 +477,6 @@ const getStats = async (req, res) => {
   }
 };
 
-// ═══════════════════════════════════════════════════════════
-//  SYNC
-// ═══════════════════════════════════════════════════════════
 const triggerSync = async (req, res) => {
   try {
     const result = await runScraper();
@@ -367,9 +499,7 @@ const getSyncLogs = async (req, res) => {
 };
 
 module.exports = {
-  // Standings
   getStandings,
-  // Matches
   getMatches,
   getUpcomingMatches,
   getLiveMatches,
@@ -378,17 +508,14 @@ module.exports = {
   getMatchById,
   getChampionshipMatches,
   getChampionships,
-  // Teams
   getTeams,
   getOurTeam,
   getTeamById,
-  // Scorers
   getScorers,
-  // News
   getNews,
-  // Stats
+  getNewsById,
+  scrapeNewsDetails,
   getStats,
-  // Sync
   triggerSync,
   getSyncLogs,
 };
