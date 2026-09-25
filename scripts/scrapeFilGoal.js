@@ -22,25 +22,93 @@ const isOurTeam = (name) => {
   return OUR_TEAM_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()));
 };
 
-const detectStatus = (statusText, homeScore, awayScore) => {
+const detectStatus = (statusText, homeScore, awayScore, matchDate) => {
   const t = (statusText || '').trim();
-  if (t.includes('مباشر') || t.includes('الشوط')) return 'live';
-  if (t.includes('انتهت')) return 'finished';
-  if (t.includes('مؤجل')) return 'postponed';
-  if (t.includes('ملغ')) return 'postponed';
-  if (homeScore !== null && awayScore !== null) return 'finished';
+
+  if (t.includes('مباشر') || t.includes('الشوط') || t.includes('استراحة')) {
+    return 'live';
+  }
+  if (t.includes('انتهت') || t.includes('نهاية المباراة')) {
+    return 'finished';
+  }
+  if (t.includes('مؤجل') || t.includes('ملغ') || t.includes('تأجل')) {
+    return 'postponed';
+  }
+
+  if (matchDate) {
+    const matchTime = new Date(matchDate).getTime();
+    const now = Date.now();
+    const diffHours = (now - matchTime) / (1000 * 60 * 60);
+
+    if (matchTime > now) {
+      return 'upcoming';
+    }
+
+    if (diffHours >= 0 && diffHours < 3 && homeScore === null) {
+      return 'live';
+    }
+
+    if (diffHours >= 3) {
+      return 'finished';
+    }
+  }
+
+  if (homeScore !== null && awayScore !== null) {
+    return 'finished';
+  }
+
   return 'upcoming';
 };
 
 const extractStandings = ($) => {
-  const results = [];
+  const tables = [];
 
-  $('.mc-block').each((blockIdx, block) => {
-    const groupTitle = $(block).find('h3').first().text().trim();
-    if (!groupTitle || !groupTitle.includes('ترتيب')) return;
+  // 1. جمع كل الجداول مع عناوينها وفرقها
+  $('.fg_tbl').each((tableIdx, table) => {
+    const $table = $(table);
+    const teams = $table.find('.fg_rw.active');
+    if (teams.length === 0) return;
 
-    $(block).find('.fg_tbl .fg_rw.active').each((rowIdx, row) => {
+    // استخرج اسم المجموعة من h3 الأقرب
+    let groupTitle = '';
+    let $prev = $table;
+    for (let i = 0; i < 15; i++) {
+      $prev = $prev.prev();
+      if (!$prev.length) break;
+
+      if ($prev.is('h3')) {
+        groupTitle = $prev.text().trim();
+        break;
+      }
+
+      const $h3 = $prev.find('h3').first();
+      if ($h3.length && !$prev.is('.mc-block')) {
+        groupTitle = $h3.text().trim();
+        break;
+      }
+    }
+
+    if (!groupTitle) {
+      groupTitle = `المجموعة ${tableIdx + 1}`;
+    }
+
+    groupTitle = groupTitle.replace(/\s+/g, ' ').trim();
+
+    // استخرج أسماء الفرق
+    const teamNames = [];
+    teams.each((rowIdx, row) => {
       const cells = $(row).find('.fg_cl');
+      if (cells.length < 11) return;
+      const teamName = $(cells[1]).text().trim().replace(/\s+/g, ' ');
+      if (teamName) teamNames.push(teamName);
+    });
+
+    // اجمع كل الفرق في جدول واحد
+    const standings = [];
+    teams.each((rowIdx, row) => {
+      const cells = $(row).find('.fg_cl');
+      if (cells.length < 11) return;
+
       const rank = parseInt($(cells[0]).text().trim(), 10);
       const teamName = $(cells[1]).text().trim().replace(/\s+/g, ' ');
       const played = parseInt($(cells[2]).text().trim(), 10);
@@ -52,7 +120,7 @@ const extractStandings = ($) => {
       const points = parseInt($(cells[10]).text().trim(), 10);
 
       if (teamName && !isNaN(rank)) {
-        results.push({
+        standings.push({
           group: groupTitle,
           rank,
           teamName,
@@ -69,7 +137,74 @@ const extractStandings = ($) => {
         });
       }
     });
+
+    tables.push({
+      tableIdx,
+      groupTitle,
+      teamCount: teams.length,
+      teamNames,
+      standings,
+    });
   });
+
+  // 2. احذف الجداول المتطابقة (نفس أسماء الفرق)
+  const uniqueTables = [];
+  const seenSignatures = new Set();
+
+  for (const table of tables) {
+    // أنشئ signature من أسماء الفرق مرتبة
+    const signature = [...table.teamNames].sort().join('|');
+
+    if (seenSignatures.has(signature)) {
+      console.log(`⏭️ Skipping duplicate: "${table.groupTitle}" (${table.teamCount} teams)`);
+      continue;
+    }
+
+    seenSignatures.add(signature);
+
+    // استبعد أي جدول يحتوي على نفس فرق جدول آخر
+    // (كشف الجدول الكلي من 29 فريق)
+    const isSuperset = uniqueTables.some((t) => {
+      if (t.teamCount >= table.teamCount) return false;
+      // هل كل فرق الجدول الصغير موجودة في الجدول الكبير؟
+      const smallSet = new Set(t.teamNames);
+      const allInBig = t.teamNames.every((n) => table.teamNames.includes(n));
+      return allInBig;
+    });
+
+    if (isSuperset) {
+      console.log(`⏭️ Skipping superset: "${table.groupTitle}" (${table.teamCount} teams)`);
+      continue;
+    }
+
+    console.log(`📋 Keeping: "${table.groupTitle}" (${table.teamCount} teams)`);
+    uniqueTables.push(table);
+  }
+
+  // 3. إذا كان الجدول الصغير جزء من الكبير، احذف الكبير
+  const finalTables = uniqueTables.filter((table) => {
+    // هل هناك جدول أصغر منه يحتوي على مجموعة فرعية من فرقه؟
+    return !uniqueTables.some((smaller) => {
+      if (smaller.teamCount >= table.teamCount) return false;
+      // هل كل فرق الجدول الأصغر موجودة في الجدول الأكبر؟
+      const allInBig = smaller.teamNames.every((n) => table.teamNames.includes(n));
+      return allInBig;
+    });
+  });
+
+  // 4. دمج كل الفرق
+  const results = [];
+  const seen = new Set();
+
+  for (const table of finalTables) {
+    console.log(`✅ Using: "${table.groupTitle}" (${table.teamCount} teams)`);
+    for (const row of table.standings) {
+      const uniqueKey = `${row.group}|${row.teamName}`;
+      if (seen.has(uniqueKey)) continue;
+      seen.add(uniqueKey);
+      results.push(row);
+    }
+  }
 
   return results;
 };
@@ -90,6 +225,8 @@ const extractMatches = ($) => {
       parsed.forEach((day) => {
         (day.Matches || []).forEach((m) => {
           const statusText = m.CurrentMatchStatus?.MatchStatusName || '';
+          const matchDate = new Date(m.Date);
+
           matches.push({
             filgoalMatchId: m.Id,
             homeTeam: (m.HomeTeamName || '').trim(),
@@ -98,11 +235,11 @@ const extractMatches = ($) => {
             awayTeamLogo: m.AwayTeamLogoUrl || '',
             homeScore: m.HomeScore ?? null,
             awayScore: m.AwayScore ?? null,
-            date: new Date(m.Date),
+            date: matchDate,
             championship: m.ChampionshipName || '',
             championshipId: m.ChampionshipId || null,
             round: m.WeekOrRound || '',
-            status: detectStatus(statusText, m.HomeScore, m.AwayScore),
+            status: detectStatus(statusText, m.HomeScore, m.AwayScore, matchDate),
             matchStatusText: statusText,
             filgoalUrl: m.Slug
               ? `https://www.filgoal.com/matches/${m.Id}/${m.Slug}`
@@ -123,6 +260,7 @@ const extractMatches = ($) => {
 
 const extractNews = ($) => {
   const news = [];
+  const seen = new Set();
 
   $('.mcitem').each((i, item) => {
     try {
@@ -139,7 +277,8 @@ const extractNews = ($) => {
       const idMatch = url.match(/\/articles\/(\d+)/);
       const articleId = idMatch ? parseInt(idMatch[1], 10) : null;
 
-      if (articleId) {
+      if (articleId && !seen.has(articleId)) {
+        seen.add(articleId);
         news.push({
           filgoalArticleId: articleId,
           title,
@@ -151,7 +290,7 @@ const extractNews = ($) => {
         });
       }
     } catch (e) {
-      // ignore item errors
+      // ignore
     }
   });
 
@@ -214,17 +353,6 @@ const runScraper = async () => {
       const $ = cheerio.load(html);
 
       log.info(`📄 HTML length: ${html.length} chars`);
-
-      const tablesCount = $('.fg_tbl').length;
-      const activeRowsCount = $('.fg_rw.active').length;
-      const newsItemsCount = $('.mcitem').length;
-      const hasViewModel = html.includes('viewModelData');
-
-      log.info(`🔍 Debug:`);
-      log.info(`   Tables: ${tablesCount}`);
-      log.info(`   Active rows: ${activeRowsCount}`);
-      log.info(`   News items: ${newsItemsCount}`);
-      log.info(`   Has viewModelData: ${hasViewModel}`);
 
       const standings = extractStandings($);
       const matches = extractMatches($);

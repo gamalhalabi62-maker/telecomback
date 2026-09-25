@@ -6,7 +6,6 @@ const {
 } = require('../models/FilgoalData');
 const { runScraper } = require('../scripts/scrapeFilGoal');
 
-
 const getStandings = async (req, res) => {
   try {
     const { group } = req.query;
@@ -22,7 +21,6 @@ const getStandings = async (req, res) => {
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
-
 
 const getMatches = async (req, res) => {
   try {
@@ -43,10 +41,9 @@ const getMatches = async (req, res) => {
 
 const getUpcomingMatches = async (req, res) => {
   try {
-    const { limit = 10 } = req.query;
+    const { limit = 20 } = req.query;
     const matches = await FilgoalMatch.find({
-      status: 'upcoming',
-      date: { $gte: new Date() },
+      status: { $in: ['upcoming', 'live'] },
     })
       .sort({ date: 1 })
       .limit(Number(limit));
@@ -68,7 +65,7 @@ const getLiveMatches = async (req, res) => {
 
 const getFinishedMatches = async (req, res) => {
   try {
-    const { limit = 20 } = req.query;
+    const { limit = 30 } = req.query;
     const matches = await FilgoalMatch.find({ status: 'finished' })
       .sort({ date: -1 })
       .limit(Number(limit));
@@ -104,7 +101,6 @@ const getMatchById = async (req, res) => {
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
-
 
 const getNews = async (req, res) => {
   try {
@@ -147,7 +143,6 @@ const getStats = async (req, res) => {
     res.status(500).json({ message: 'خطأ في السيرفر', error: error.message });
   }
 };
-
 
 const triggerSync = async (req, res) => {
   try {
