@@ -24,26 +24,93 @@ const detectGender = (raw) => {
   return '';
 };
 
+const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const normalizeArabic = (str) => {
+  return String(str || '')
+    .trim()
+    .replace(/[\u064B-\u065F\u0670]/g, '') 
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+};
+
 const searchMember = async (req, res) => {
   try {
     const { input } = req.body;
 
-    if (!input) {
-      return res.status(400).json({ message: 'رقم الشركة مطلوب' });
-    }
-
-    const cleaned = String(input).replace(/\D/g, '');
-    if (cleaned.length !== 6) {
+    if (!input || !String(input).trim()) {
       return res.status(400).json({
-        message: 'يجب إدخال 6 أرقام بالضبط — مثال: 000029',
+        message: 'يرجى إدخال رقم العضوية أو الاسم الثلاثي',
       });
     }
 
-    const member = await Member.findOne({ companyNumber: cleaned });
+    const trimmed = String(input).trim();
+    const isNumeric = /^\d+$/.test(trimmed.replace(/\s/g, ''));
+
+    let member = null;
+
+    if (isNumeric) {
+      const cleaned = trimmed.replace(/\D/g, '');
+      if (cleaned.length !== 6) {
+        return res.status(400).json({
+          message: 'يجب إدخال 6 أرقام بالضبط — مثال: 000029',
+        });
+      }
+      member = await Member.findOne({ companyNumber: cleaned });
+    } else {
+      const words = trimmed.split(/\s+/).filter(Boolean);
+      if (words.length < 3) {
+        return res.status(400).json({
+          message: 'يجب إدخال الاسم الثلاثي كاملاً (3 كلمات على الأقل)',
+        });
+      }
+
+      const normalizedWords = words.map((w) => escapeRegex(w));
+
+     
+      member = await Member.findOne({
+        $and: normalizedWords.map((w) => ({
+          name: { $regex: w, $options: 'i' },
+        })),
+      }).collation({ locale: 'ar', strength: 1 });
+
+      if (!member) {
+        const allMembers = await Member.find({}, { name: 1, _id: 1 }).lean();
+        const normalizedInput = normalizeArabic(trimmed);
+        const matched = allMembers.find((m) => {
+          const normalizedName = normalizeArabic(m.name);
+          return normalizedName.includes(normalizedInput);
+        });
+
+        if (matched) {
+          member = await Member.findById(matched._id);
+        }
+      }
+
+      if (!member) {
+        const allMembers = await Member.find({}, { name: 1, _id: 1 }).lean();
+        const normalizedWords = words.map((w) => normalizeArabic(w));
+        const matched = allMembers.find((m) => {
+          const normalizedName = normalizeArabic(m.name);
+          return normalizedWords.every((w) => normalizedName.includes(w));
+        });
+
+        if (matched) {
+          member = await Member.findById(matched._id);
+        }
+      }
+    }
 
     if (!member) {
       return res.status(404).json({
-        message: 'لم يتم العثور على عضو بهذا الرقم. تأكد من الرقم وحاول مرة أخرى.',
+        message: isNumeric
+          ? 'لم يتم العثور على عضو بهذا الرقم. تأكد من الرقم وحاول مرة أخرى.'
+          : 'لم يتم العثور على عضو بهذا الاسم. تأكد من كتابة الاسم الثلاثي كاملاً.',
         notFound: true,
       });
     }
@@ -262,7 +329,7 @@ const exportAttendance = async (req, res) => {
 
     const data = list.map((item, index) => ({
       'م': index + 1,
-      'رقم الشركة': item.companyNumber || '',
+      'رقم العضوية': item.companyNumber || '',
       'الاسم': item.name,
       'نوع العضوية': item.membershipType === 'working' ? 'عامل' : 'بالمعاش',
       'الهاتف': item.phone,
