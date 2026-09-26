@@ -13,6 +13,12 @@ const electionAttendanceSchema = new mongoose.Schema({
     required: true,
     index: true,
   },
+  companyNumber: {
+    type: String,
+    default: '',
+    trim: true,
+    index: true,
+  },
   membershipType: {
     type: String,
     enum: ['working', 'retired'],

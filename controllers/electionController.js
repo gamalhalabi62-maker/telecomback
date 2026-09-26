@@ -193,18 +193,30 @@ const getAttendanceStats = async (req, res) => {
     const attending = await ElectionAttendance.countDocuments({ willAttend: true });
     const notAttending = await ElectionAttendance.countDocuments({ willAttend: false });
 
-    const attendingWorking = await ElectionAttendance.countDocuments({ willAttend: true, membershipType: 'working' });
-    const attendingRetired = await ElectionAttendance.countDocuments({ willAttend: true, membershipType: 'retired' });
-    const notAttendingWorking = await ElectionAttendance.countDocuments({ willAttend: false, membershipType: 'working' });
-    const notAttendingRetired = await ElectionAttendance.countDocuments({ willAttend: false, membershipType: 'retired' });
+    const attendingWorking = await ElectionAttendance.countDocuments({
+      willAttend: true,
+      membershipType: 'working',
+    });
+    const attendingRetired = await ElectionAttendance.countDocuments({
+      willAttend: true,
+      membershipType: 'retired',
+    });
+    const notAttendingWorking = await ElectionAttendance.countDocuments({
+      willAttend: false,
+      membershipType: 'working',
+    });
+    const notAttendingRetired = await ElectionAttendance.countDocuments({
+      willAttend: false,
+      membershipType: 'retired',
+    });
 
     const byCommittee = await ElectionAttendance.aggregate([
-      { $match: { willAttend: true, committeeNumber: { $ne: '' } } },
+      { $match: { willAttend: true } },
       {
         $group: {
           _id: {
-            committeeNumber: '$committeeNumber',
-            committeeName: '$committeeName',
+            committeeNumber: { $ifNull: ['$committeeNumber', ''] },
+            committeeName: { $ifNull: ['$committeeName', 'غير محدد'] },
           },
           count: { $sum: 1 },
         },
@@ -272,7 +284,10 @@ const exportAttendance = async (req, res) => {
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
     const filename = `election-attendance-${new Date().toISOString().split('T')[0]}.xlsx`;
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
   } catch (error) {
@@ -300,7 +315,7 @@ const importMembersFromExcel = async (req, res) => {
 
     const isHeaderRow = (row) => {
       if (!row) return false;
-      const str = row.map(c => String(c || '')).join('|');
+      const str = row.map((c) => String(c || '')).join('|');
       return str.includes('الاسم') && (str.includes('رقم العضوية') || str.includes('رقم العضو'));
     };
 

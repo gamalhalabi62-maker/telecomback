@@ -160,12 +160,6 @@ console.log('⏰ Cron job scheduled: FilGoal full sync every 30 minutes');
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log('');
-  console.log('════════════════════════════════════════════');
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔓 Rate limiting: DISABLED`);
-  console.log(`📋 CORS allowed origins:`);
   allowedOrigins.forEach((o) => console.log(`   • ${o}`));
-  console.log('════════════════════════════════════════════');
   console.log('');
 });
