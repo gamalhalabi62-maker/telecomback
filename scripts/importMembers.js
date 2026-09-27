@@ -9,7 +9,6 @@ const Member = require('../models/Member');
 
 const MEMBERSHIP_PREFIX = '00101';
 
-// ⚠️ بدون padStart — نخزن الرقم زي ما هو في الإكسل
 const padCompany = (val) => String(val || '').trim();
 const padMembership = (val) => String(val || '').trim();
 
@@ -105,6 +104,7 @@ const parseRetiredSheet = (rows) => {
         phone: phoneRaw,
         address: addressRaw,
         gender: detectGender(genderRaw),
+        // ⚠️ committeeName و committeeNumber فاضيين — هيتم إضافتهم لاحقاً
       });
     } catch (rowErr) {
       errors.push({ row: originalIndex, error: rowErr.message });
@@ -117,6 +117,7 @@ const parseRetiredSheet = (rows) => {
 // ═══════════════════════════════════════════════════════════
 //  Sheet 2: "Data Emp" — الأعضاء العاملين
 //  Columns: B=رقم العامل | C=رقم العضوية | F=الاسم | G=النوع | I=التليفون | N=مكان التواجد
+// ⚠️ ملاحظة: "مكان التواجد" (N) هو مكان شغل الموظف — ليس مكان اللجنة
 // ═══════════════════════════════════════════════════════════
 const parseWorkingSheet = (rows) => {
   const results = [];
@@ -158,7 +159,7 @@ const parseWorkingSheet = (rows) => {
       const nameRaw = cleanString(row[5]);
       const genderRaw = String(row[6] || '').trim();
       const phoneRaw = cleanString(row[8]);
-      const locationRaw = cleanString(row[13]);
+      // ⚠️ العمود N (مكان التواجد) — مش هنستخدمه
 
       if (!companyRaw || !membershipRaw || !nameRaw || nameRaw.length < 2) {
         skipped++;
@@ -179,7 +180,7 @@ const parseWorkingSheet = (rows) => {
         phone: phoneRaw,
         address: '',
         gender: detectGender(genderRaw),
-        committeeName: locationRaw,
+        // ⚠️ committeeName و committeeNumber فاضيين — هيتم إضافتهم لاحقاً
       });
     } catch (rowErr) {
       errors.push({ row: originalIndex, error: rowErr.message });
