@@ -4,11 +4,11 @@ const ElectionAttendance = require('../models/ElectionAttendance');
 
 const MEMBERSHIP_PREFIX = '00101';
 
-const padCompany = (val) => String(val || '').trim().padStart(6, '0');
-const padMembership = (val) => String(val || '').trim().padStart(3, '0');
+const padCompany = (val) => String(val || '').trim();
+const padMembership = (val) => String(val || '').trim();
 
 const buildFullNumber = (companyNumber, membershipNumber) => {
-  return `${MEMBERSHIP_PREFIX}${padCompany(companyNumber)}${padMembership(membershipNumber)}`;
+  return `${MEMBERSHIP_PREFIX}${companyNumber}${membershipNumber}`;
 };
 
 const detectMembershipType = (raw) => {
@@ -24,93 +24,74 @@ const detectGender = (raw) => {
   return '';
 };
 
-const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const normalizeArabic = (str) => {
-  return String(str || '')
-    .trim()
-    .replace(/[\u064B-\u065F\u0670]/g, '') 
-    .replace(/[أإآٱ]/g, 'ا')
-    .replace(/ى/g, 'ي')
-    .replace(/ؤ/g, 'و')
-    .replace(/ئ/g, 'ي')
-    .replace(/ة/g, 'ه')
-    .replace(/\s+/g, ' ')
-    .toLowerCase();
-};
-
 const searchMember = async (req, res) => {
   try {
     const { input } = req.body;
 
-    if (!input || !String(input).trim()) {
-      return res.status(400).json({
-        message: 'يرجى إدخال رقم العضوية أو الاسم الثلاثي',
-      });
+    if (!input) {
+      return res.status(400).json({ message: 'الرقم أو الاسم مطلوب' });
     }
 
     const trimmed = String(input).trim();
-    const isNumeric = /^\d+$/.test(trimmed.replace(/\s/g, ''));
+    if (!trimmed) {
+      return res.status(400).json({ message: 'الرقم أو الاسم مطلوب' });
+    }
+
+    const cleaned = trimmed.replace(/\D/g, '');
+    const isNumeric =
+      /^\d+$/.test(cleaned) && cleaned.length === trimmed.replace(/\s/g, '').length;
+    const nameWords = trimmed.split(/\s+/).filter(Boolean);
 
     let member = null;
 
     if (isNumeric) {
-      const cleaned = trimmed.replace(/\D/g, '');
-      if (cleaned.length !== 6) {
+      if (cleaned.length < 3 || cleaned.length > 17) {
         return res.status(400).json({
-          message: 'يجب إدخال 6 أرقام بالضبط — مثال: 000029',
+          message: 'يجب إدخال 3 أرقام على الأقل — مثال: 40266 (عامل) أو 001137 (عضوية)',
         });
       }
-      member = await Member.findOne({ companyNumber: cleaned });
+
+      const unpadded = cleaned.replace(/^0+/, '') || cleaned;
+      const padded6 = cleaned.padStart(6, '0');
+      const padded6Unpadded = padded6.replace(/^0+/, '') || padded6;
+      const padded3 = cleaned.padStart(3, '0');
+
+      const possibleNumbers = [
+        cleaned,
+        unpadded,
+        padded6,
+        padded6Unpadded,
+        padded3,
+      ].filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+      member = await Member.findOne({
+        $or: [
+          { companyNumber: { $in: possibleNumbers } },
+          { membershipNumber: { $in: possibleNumbers } },
+          { fullMembershipNumber: { $in: possibleNumbers } },
+          { fullMembershipNumber: { $regex: cleaned + '$' } },
+          { fullMembershipNumber: { $regex: padded6 + '$' } },
+        ],
+      });
     } else {
-      const words = trimmed.split(/\s+/).filter(Boolean);
-      if (words.length < 3) {
+      if (nameWords.length < 3) {
         return res.status(400).json({
           message: 'يجب إدخال الاسم الثلاثي كاملاً (3 كلمات على الأقل)',
         });
       }
 
-      const normalizedWords = words.map((w) => escapeRegex(w));
+      const nameRegex = nameWords
+        .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('.*');
 
-     
       member = await Member.findOne({
-        $and: normalizedWords.map((w) => ({
-          name: { $regex: w, $options: 'i' },
-        })),
-      }).collation({ locale: 'ar', strength: 1 });
-
-      if (!member) {
-        const allMembers = await Member.find({}, { name: 1, _id: 1 }).lean();
-        const normalizedInput = normalizeArabic(trimmed);
-        const matched = allMembers.find((m) => {
-          const normalizedName = normalizeArabic(m.name);
-          return normalizedName.includes(normalizedInput);
-        });
-
-        if (matched) {
-          member = await Member.findById(matched._id);
-        }
-      }
-
-      if (!member) {
-        const allMembers = await Member.find({}, { name: 1, _id: 1 }).lean();
-        const normalizedWords = words.map((w) => normalizeArabic(w));
-        const matched = allMembers.find((m) => {
-          const normalizedName = normalizeArabic(m.name);
-          return normalizedWords.every((w) => normalizedName.includes(w));
-        });
-
-        if (matched) {
-          member = await Member.findById(matched._id);
-        }
-      }
+        name: { $regex: nameRegex, $options: 'i' },
+      });
     }
 
     if (!member) {
       return res.status(404).json({
-        message: isNumeric
-          ? 'لم يتم العثور على عضو بهذا الرقم. تأكد من الرقم وحاول مرة أخرى.'
-          : 'لم يتم العثور على عضو بهذا الاسم. تأكد من كتابة الاسم الثلاثي كاملاً.',
+        message: 'لم يتم العثور على عضو. تأكد من البيانات وحاول مرة أخرى.',
         notFound: true,
       });
     }
@@ -329,7 +310,7 @@ const exportAttendance = async (req, res) => {
 
     const data = list.map((item, index) => ({
       'م': index + 1,
-      'رقم العضوية': item.companyNumber || '',
+      'رقم الشركة': item.companyNumber || '',
       'الاسم': item.name,
       'نوع العضوية': item.membershipType === 'working' ? 'عامل' : 'بالمعاش',
       'الهاتف': item.phone,
@@ -378,8 +359,6 @@ const importMembersFromExcel = async (req, res) => {
       return res.status(400).json({ message: 'الملف فارغ' });
     }
 
-    console.log(`📊 Total rows in file: ${allRows.length}`);
-
     const isHeaderRow = (row) => {
       if (!row) return false;
       const str = row.map((c) => String(c || '')).join('|');
@@ -400,9 +379,6 @@ const importMembersFromExcel = async (req, res) => {
       });
     }
 
-    console.log(`📌 Header row found at index ${headerRowIndex}`);
-    console.log(`   Headers:`, allRows[headerRowIndex]);
-
     const dataRows = allRows
       .slice(headerRowIndex + 1)
       .map((row, idx) => ({ row, originalIndex: headerRowIndex + 1 + idx }))
@@ -411,8 +387,6 @@ const importMembersFromExcel = async (req, res) => {
         const name = String(row[6] || '').trim();
         return name.length >= 2;
       });
-
-    console.log(`📊 Data rows to process: ${dataRows.length}`);
 
     let created = 0;
     let updated = 0;

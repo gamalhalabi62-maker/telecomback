@@ -8,8 +8,10 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 const Member = require('../models/Member');
 
 const MEMBERSHIP_PREFIX = '00101';
-const padCompany = (val) => String(val || '').trim().padStart(6, '0');
-const padMembership = (val) => String(val || '').trim().padStart(3, '0');
+
+// ⚠️ بدون padStart — نخزن الرقم زي ما هو في الإكسل
+const padCompany = (val) => String(val || '').trim();
+const padMembership = (val) => String(val || '').trim();
 
 const detectGender = (raw) => {
   const val = String(raw || '').trim();
@@ -31,6 +33,165 @@ const cleanNumber = (val) => {
   return match ? match[0] : '';
 };
 
+const cleanString = (val) => {
+  if (val === null || val === undefined) return '';
+  const str = String(val).trim();
+  if (str === '0' || str === '#N/A' || str === 'N/A') return '';
+  return str;
+};
+
+// ═══════════════════════════════════════════════════════════
+//  Sheet 1: "معاش" — الأعضاء بالمعاش
+//  Columns: B=م نادى | C=نوع | D=رقم العامل | G=الاسم | H=العنوان | I=النوع | J=التليفون
+// ═══════════════════════════════════════════════════════════
+const parseRetiredSheet = (rows) => {
+  const results = [];
+  const errors = [];
+  let skipped = 0;
+
+  let headerRowIndex = -1;
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const str = row.map((c) => String(c || '')).join('|');
+    if (str.includes('الاسم') && (str.includes('رقم العضوية') || str.includes('رقم العامل'))) {
+      headerRowIndex = i;
+      break;
+    }
+  }
+
+  if (headerRowIndex === -1) {
+    return { results: [], errors: [{ row: 0, error: 'لم يتم العثور على صف العناوين' }], skipped: 0 };
+  }
+
+  console.log(`   📌 [معاش] Header row at index ${headerRowIndex}`);
+
+  const dataRows = rows
+    .slice(headerRowIndex + 1)
+    .map((row, idx) => ({ row, originalIndex: headerRowIndex + 2 + idx }))
+    .filter(({ row }) => {
+      if (!row || row.length === 0) return false;
+      const name = String(row[6] || '').trim();
+      return name.length >= 2;
+    });
+
+  console.log(`   📊 [معاش] Data rows: ${dataRows.length}`);
+
+  for (const { row, originalIndex } of dataRows) {
+    try {
+      const typeRaw = String(row[2] || '').trim();
+      const companyRaw = cleanNumber(row[3]);
+      const nameRaw = cleanString(row[6]);
+      const addressRaw = cleanString(row[7]);
+      const genderRaw = String(row[8] || '').trim();
+      const phoneRaw = cleanString(row[9]);
+
+      if (!companyRaw || !nameRaw || nameRaw.length < 2) {
+        skipped++;
+        continue;
+      }
+
+      const companyNumber = padCompany(companyRaw);
+      const membershipNumber = '001';
+      const fullNumber = `${MEMBERSHIP_PREFIX}${companyNumber}${membershipNumber}`;
+      const membershipType = detectMembershipType(typeRaw);
+
+      results.push({
+        companyNumber,
+        membershipNumber,
+        fullMembershipNumber: fullNumber,
+        membershipType,
+        name: nameRaw,
+        phone: phoneRaw,
+        address: addressRaw,
+        gender: detectGender(genderRaw),
+      });
+    } catch (rowErr) {
+      errors.push({ row: originalIndex, error: rowErr.message });
+    }
+  }
+
+  return { results, errors, skipped };
+};
+
+// ═══════════════════════════════════════════════════════════
+//  Sheet 2: "Data Emp" — الأعضاء العاملين
+//  Columns: B=رقم العامل | C=رقم العضوية | F=الاسم | G=النوع | I=التليفون | N=مكان التواجد
+// ═══════════════════════════════════════════════════════════
+const parseWorkingSheet = (rows) => {
+  const results = [];
+  const errors = [];
+  let skipped = 0;
+
+  let headerRowIndex = -1;
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const str = row.map((c) => String(c || '')).join('|');
+    if (str.includes('الاسم') && (str.includes('رقم العضوية') || str.includes('رقم العامل'))) {
+      headerRowIndex = i;
+      break;
+    }
+  }
+
+  if (headerRowIndex === -1) {
+    return { results: [], errors: [{ row: 0, error: 'لم يتم العثور على صف العناوين' }], skipped: 0 };
+  }
+
+  console.log(`   📌 [Data Emp] Header row at index ${headerRowIndex}`);
+
+  const dataRows = rows
+    .slice(headerRowIndex + 1)
+    .map((row, idx) => ({ row, originalIndex: headerRowIndex + 2 + idx }))
+    .filter(({ row }) => {
+      if (!row || row.length === 0) return false;
+      const name = String(row[5] || '').trim();
+      return name.length >= 2;
+    });
+
+  console.log(`   📊 [Data Emp] Data rows: ${dataRows.length}`);
+
+  for (const { row, originalIndex } of dataRows) {
+    try {
+      const companyRaw = cleanNumber(row[1]);
+      const membershipRaw = cleanNumber(row[2]);
+      const nameRaw = cleanString(row[5]);
+      const genderRaw = String(row[6] || '').trim();
+      const phoneRaw = cleanString(row[8]);
+      const locationRaw = cleanString(row[13]);
+
+      if (!companyRaw || !membershipRaw || !nameRaw || nameRaw.length < 2) {
+        skipped++;
+        continue;
+      }
+
+      const companyNumber = padCompany(companyRaw);
+      const membershipNumber = padMembership(membershipRaw);
+      const fullNumber = `${MEMBERSHIP_PREFIX}${companyNumber}${membershipNumber}`;
+      const membershipType = 'working';
+
+      results.push({
+        companyNumber,
+        membershipNumber,
+        fullMembershipNumber: fullNumber,
+        membershipType,
+        name: nameRaw,
+        phone: phoneRaw,
+        address: '',
+        gender: detectGender(genderRaw),
+        committeeName: locationRaw,
+      });
+    } catch (rowErr) {
+      errors.push({ row: originalIndex, error: rowErr.message });
+    }
+  }
+
+  return { results, errors, skipped };
+};
+
+// ═══════════════════════════════════════════════════════════
+//  Main
+// ═══════════════════════════════════════════════════════════
 const run = async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI);
@@ -43,124 +204,103 @@ const run = async () => {
     }
 
     const workbook = XLSX.readFile(filePath);
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
 
-    const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-    console.log(`📊 Total rows in file: ${allRows.length}\n`);
+    console.log(`📚 Workbook sheets: ${workbook.SheetNames.join(' | ')}\n`);
 
-    let headerRowIndex = -1;
-    for (let i = 0; i < Math.min(allRows.length, 20); i++) {
-      const row = allRows[i];
-      if (!row) continue;
-      const rowStr = row.map(c => String(c || '')).join('|');
-      if (rowStr.includes('الاسم') && (rowStr.includes('رقم العضوية') || rowStr.includes('رقم العضو'))) {
-        headerRowIndex = i;
-        break;
-      }
-    }
-
-    if (headerRowIndex === -1) {
-      console.error('❌ لم يُعثر على صف العناوين');
-      process.exit(1);
-    }
-
-    console.log(`📌 Header row found at index ${headerRowIndex}`);
-    console.log(`   Headers:`, allRows[headerRowIndex]);
-    console.log('');
-
-    const dataRows = allRows
-      .slice(headerRowIndex + 1)
-      .map((row, idx) => ({ row, originalIndex: headerRowIndex + 1 + idx }))
-      .filter(({ row }) => {
-        if (!row || row.length === 0) return false;
-        const name = String(row[6] || '').trim();
-        return name.length >= 2;
-      });
-
-    console.log(`📊 Data rows to process: ${dataRows.length}\n`);
-
-    let created = 0;
-    let updated = 0;
-    let skipped = 0;
-    const errors = [];
+    let totalCreated = 0;
+    let totalUpdated = 0;
+    let totalSkipped = 0;
+    const allErrors = [];
     const typeCounts = { working: 0, retired: 0 };
 
-    for (const { row, originalIndex } of dataRows) {
-      try {
-        const typeRaw = String(row[2] || '').trim();
-        const companyRaw = cleanNumber(row[3]);
-        const membershipRaw = cleanNumber(row[5]);
-        const nameRaw = String(row[6] || '').trim();
-        const addressRaw = String(row[7] || '').trim();
-        const genderRaw = String(row[8] || '').trim();
-        const phoneRaw = String(row[9] || '').trim();
+    for (const sheetName of workbook.SheetNames) {
+      console.log('═'.repeat(60));
+      console.log(`📄 Processing sheet: "${sheetName}"`);
+      console.log('═'.repeat(60));
 
-        if (!companyRaw || !membershipRaw || !nameRaw || nameRaw.length < 2) {
-          skipped++;
+      const sheet = workbook.Sheets[sheetName];
+      const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      console.log(`   📊 Total rows in sheet: ${allRows.length}`);
+
+      let parsed;
+      if (sheetName.includes('معاش') || sheetName.toLowerCase().includes('retired')) {
+        parsed = parseRetiredSheet(allRows);
+      } else if (sheetName.includes('Emp') || sheetName.includes('Data') || sheetName.toLowerCase().includes('working')) {
+        parsed = parseWorkingSheet(allRows);
+      } else {
+        const firstDataRow = allRows.find((r) => r && r.length > 5 && String(r[5] || '').trim().length > 2);
+        if (firstDataRow) {
+          const col3 = cleanNumber(firstDataRow[3]);
+          const col1 = cleanNumber(firstDataRow[1]);
+          if (col3 && !col1) {
+            parsed = parseRetiredSheet(allRows);
+          } else {
+            parsed = parseWorkingSheet(allRows);
+          }
+        } else {
+          console.log(`   ⏭️  Skipped unknown sheet: "${sheetName}"`);
           continue;
         }
-
-        const companyNumber = padCompany(companyRaw);
-        const membershipNumber = padMembership(membershipRaw);
-        const fullNumber = `${MEMBERSHIP_PREFIX}${companyNumber}${membershipNumber}`;
-        const membershipType = detectMembershipType(typeRaw);
-
-        const data = {
-          companyNumber,
-          membershipNumber,
-          fullMembershipNumber: fullNumber,
-          membershipType,
-          name: nameRaw,
-          phone: phoneRaw === '0' ? '' : phoneRaw,
-          address: addressRaw === '0' ? '' : addressRaw,
-          gender: detectGender(genderRaw),
-        };
-
-        const existing = await Member.findOne({ fullMembershipNumber: fullNumber });
-
-        if (existing) {
-          await Member.updateOne({ _id: existing._id }, { $set: data });
-          updated++;
-        } else {
-          await Member.create(data);
-          created++;
-        }
-
-        typeCounts[membershipType]++;
-
-        if ((created + updated) % 50 === 0) {
-          console.log(`   ⏳ Progress: ${created + updated}/${dataRows.length}`);
-        }
-      } catch (rowErr) {
-        errors.push({ row: originalIndex + 1, error: rowErr.message });
       }
+
+      const { results, errors, skipped } = parsed;
+      console.log(`   ✅ Parsed: ${results.length} valid rows, ${skipped} skipped, ${errors.length} errors`);
+
+      totalSkipped += skipped;
+      allErrors.push(...errors.map((e) => ({ ...e, sheet: sheetName })));
+
+      for (const data of results) {
+        try {
+          const existing = await Member.findOne({ fullMembershipNumber: data.fullMembershipNumber });
+
+          if (existing) {
+            continue;
+          }
+
+          await Member.create(data);
+          totalCreated++;
+          typeCounts[data.membershipType]++;
+
+          if (totalCreated % 100 === 0) {
+            console.log(`   ⏳ Progress: ${totalCreated} new members created`);
+          }
+        } catch (err) {
+          if (err.code === 11000) {
+            continue;
+          }
+          allErrors.push({ sheet: sheetName, row: 0, error: err.message });
+        }
+      }
+
+      console.log(`   ✅ Sheet "${sheetName}" done.\n`);
     }
 
     console.log('\n' + '='.repeat(60));
-    console.log('✅ Import complete!');
+    console.log('✅ Import Complete!');
     console.log('='.repeat(60));
-    console.log(`📊 Total rows processed: ${dataRows.length}`);
-    console.log(`✨ Created: ${created}`);
-    console.log(`🔄 Updated: ${updated}`);
-    console.log(`⏭️  Skipped: ${skipped}`);
-    console.log(`❌ Errors: ${errors.length}`);
+    console.log(`📊 Total new members created: ${totalCreated}`);
+    console.log(`🔄 Total skipped (already existed): ${totalUpdated}`);
+    console.log(`⏭️  Total skipped (invalid data): ${totalSkipped}`);
+    console.log(`❌ Total errors: ${allErrors.length}`);
     console.log('='.repeat(60));
-    console.log(`\n📊 Breakdown by type:`);
+    console.log(`\n📊 Breakdown by type (new members only):`);
     console.log(`   👷 عامل: ${typeCounts.working}`);
     console.log(`   👴 بالمعاش: ${typeCounts.retired}`);
-    console.log('='.repeat(60) + '\n');
+    console.log('='.repeat(60));
 
     const dbWorking = await Member.countDocuments({ membershipType: 'working' });
     const dbRetired = await Member.countDocuments({ membershipType: 'retired' });
-    console.log(`📊 Database totals:`);
+    const dbTotal = await Member.countDocuments();
+
+    console.log(`\n📊 Database totals (after import):`);
     console.log(`   👷 عامل: ${dbWorking}`);
     console.log(`   👴 بالمعاش: ${dbRetired}`);
-    console.log(`   📊 الإجمالي: ${dbWorking + dbRetired}\n`);
+    console.log(`   📊 الإجمالي: ${dbTotal}\n`);
 
-    if (errors.length > 0) {
-      console.log('First 5 errors:');
-      errors.slice(0, 5).forEach(e => console.log(`  Row ${e.row}: ${e.error}`));
+    if (allErrors.length > 0) {
+      console.log('First 10 errors:');
+      allErrors.slice(0, 10).forEach((e) => console.log(`  [${e.sheet}] Row ${e.row}: ${e.error}`));
     }
 
     process.exit(0);
